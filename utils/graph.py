@@ -51,13 +51,9 @@ class Graph(object):
     def __init__(self, path, weighted=False):
         """Deserializes *.json file into four attributes: name, idx, points, lines, and creates graph.
 
-        Args:
-            path: Path to *.json file describing a graph.
-            weighted: Creates weighted graph when True.
-
-        Returns:
-            None.
-
+        :param path: string - path to *.json file describing a graph
+        :param weighted: boolean - creates weighted graph when True
+        :return: None
         """
 
         self.path = path
@@ -84,17 +80,13 @@ class Graph(object):
     def get_coordinates(self, layout, **kwargs):
         """Calculates coordinates for building a graph.
 
-        Args:
-            layout: Graph layout type. Default layout is provided by @default_layout decorator.
-            kwargs: Keyword arguments of networkx layout methods.
-
-        Returns:
-            2-tuple of lists; points and lines. The first one is a List of tuples where each tuple denotes separate
-            point. Each point is represented by two values which are point idx and a dict of point attributes including
-            point coordinates with keys 'x' and 'y'. The second one is a List of tuples where each tuple denotes
-            separate line. Each line is represented by three values which are two idxs of points which are connected
-            with the line and a dict of line attributes including line weight with the key 'weight'.
-
+        :param layout: string - graph layout type. Default layout is provided by @default_layout decorator
+        :param kwargs: dict - keyword arguments of networkx layout methods
+        :return: 2-tuple of lists; points and lines. The first one is a List of tuples where each tuple denotes separate
+        point. Each point is represented by two values which are point idx and a dict of point attributes including
+        point coordinates with keys 'x' and 'y'. The second one is a List of tuples where each tuple denotes
+        separate line. Each line is represented by three values which are two idxs of points which are connected
+        with the line and a dict of line attributes including line weight with the key 'weight'
         """
 
         coordinates = self.LAYOUT_MAP[layout](self.graph, **kwargs)
