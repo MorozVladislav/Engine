@@ -43,7 +43,7 @@ class Application(Frame, object):
         """Creates application main window with Canvas sizes self.WIDTH and self.HEIGHT."""
 
         super(Application, self).__init__(master)
-        self.master.title('Graph')
+        self.master.title('Graph Visualisation App')
 
         self._graph, self.points, self.lines = None, None, None
         self.x0, self.y0, self.scale_x, self.scale_y = self.WIDTH / 2, self.HEIGHT / 2, None, None
