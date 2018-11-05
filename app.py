@@ -10,8 +10,7 @@ from utils.graph import Graph
 
 
 def prepare_coordinates(func):
-    """Calculates scales and prepares coordinates for drawing in Canvas in case the actions were not
-    performed previously."""
+    """Calculates scales and coordinates for drawing in Canvas in case they were not calculated previously."""
 
     def wrapped(self, *args, **kwargs):
         if self.scale_x is None or self.scale_y is None:
@@ -129,13 +128,9 @@ class Application(Frame, object):
     def create_points(self, points):
         """Draws points in Canvas.
 
-        Args:
-            points: List of tuples where each tuple denotes separate point. Each point is represented by two value
-            which are point idx and a dict of point attributes including point coordinates with keys 'x' and 'y'.
-
-        Returns:
-            None.
-
+        :param points: list - list of tuples where each tuple denotes separate point. Each point is represented by two
+        value which are point idx and a dict of point attributes including point coordinates with keys 'x' and 'y'
+        :return: None
         """
 
         for point in points:
@@ -148,15 +143,10 @@ class Application(Frame, object):
         """Draws lines in Canvas and fills list of weights with their coordinates to draw by.
 
         Shows line weights if self.show_weight is set to 1.
-
-                Args:
-                    lines: List of tuples where each tuple denotes separate line. Each line is represented by three
-                    values which are two idxs of points which are connected with the line and a dict of line attributes
-                    including line weight with the key 'weight'.
-
-                Returns:
-                    None.
-
+        :param lines: list - list of tuples where each tuple denotes separate line. Each line is represented by three
+        values which are two idxs of points which are connected with the line and a dict of line attributes including
+        line weight with the key 'weight'
+        :return: None
         """
 
         for line in lines:
