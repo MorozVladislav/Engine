@@ -75,9 +75,15 @@ class Application(Frame, object):
         self.canvas.pack(fill=BOTH, expand=True)
         self.frame.pack()
 
+        self.weighted = IntVar()
+        self.weighted_check = Checkbutton(self, text='Weighted graph', variable=self.weighted,
+                                          command=self.build_graph)
+        self.weighted_check.pack(side=LEFT)
+
         self.show_weight = IntVar()
-        self.check_button = Checkbutton(self, text='Show weight', variable=self.show_weight, command=self.show_weights)
-        self.check_button.pack(side=LEFT)
+        self.show_weight_check = Checkbutton(self, text='Show weight', variable=self.show_weight,
+                                             command=self.show_weights)
+        self.show_weight_check.pack(side=LEFT)
 
         self.pack()
 
@@ -103,13 +109,18 @@ class Application(Frame, object):
             self.path.set(tkFileDialog.askopenfile(parent=root, **self.FILE_OPEN_OPTIONS).name)
         except AttributeError:
             return
-        self.graph = Graph(self.path.get())
+        self.build_graph()
+
+    def build_graph(self):
+        """Builds and draws graph."""
+
+        self.graph = Graph(self.path.get(), weighted=self.weighted.get())
         self.points, self.lines = self.graph.get_coordinates()
         self.create_lines(self.lines)
         self.create_points(self.points)
 
     def exit(self):
-        """Closes application"""
+        """Closes application."""
 
         self.master.destroy()
 
