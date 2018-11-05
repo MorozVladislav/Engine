@@ -114,10 +114,11 @@ class Application(Frame, object):
     def build_graph(self):
         """Builds and draws graph."""
 
-        self.graph = Graph(self.path.get(), weighted=self.weighted.get())
-        self.points, self.lines = self.graph.get_coordinates()
-        self.create_lines(self.lines)
-        self.create_points(self.points)
+        if self.path.get() != 'No file chosen':
+            self.graph = Graph(self.path.get(), weighted=self.weighted.get())
+            self.points, self.lines = self.graph.get_coordinates()
+            self.create_lines(self.lines)
+            self.create_points(self.points)
 
     def exit(self):
         """Closes application."""
