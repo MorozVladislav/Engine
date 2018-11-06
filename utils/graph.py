@@ -4,6 +4,7 @@
 
 from json import load
 from os.path import expanduser
+from attrdict import AttrDict
 
 import networkx
 
@@ -14,39 +15,26 @@ def default_layout(func):
     def wrapped(self, layout=None, **kwargs):
         if layout is None:
             if self.weighted:
-                layout = Layouts.KAMADA_KAWAI
+                layout = self.LAYOUTS.KAMADA_KAWAI
             else:
-                layout = Layouts.SPRING
+                layout = self.LAYOUTS.SPRING
         return func(self, layout, **kwargs)
     return wrapped
-
-
-class Layouts(object):
-    """Implements a set of layouts."""
-
-    BIPARTITE = 'BIPARTITE'
-    CIRCULAR = 'CIRCULAR'
-    KAMADA_KAWAI = 'KAMADA_KAWAI'
-    RANDOM = 'RANDOM'
-    RESCALE = 'RESCALE'
-    SHELL = 'SHELL'
-    SPRING = 'SPRING'
-    SPECTRAL = 'SPECTRAL'
 
 
 class Graph(object):
     """Base class for undirected graphs"""
 
-    LAYOUT_MAP = {
-        Layouts.BIPARTITE: networkx.bipartite_layout,
-        Layouts.CIRCULAR: networkx.circular_layout,
-        Layouts.KAMADA_KAWAI: networkx.kamada_kawai_layout,
-        Layouts.RANDOM: networkx.random_layout,
-        Layouts.RESCALE: networkx.rescale_layout,
-        Layouts.SHELL: networkx.shell_layout,
-        Layouts.SPRING: networkx.spring_layout,
-        Layouts.SPECTRAL: networkx.spectral_layout
-    }
+    LAYOUTS = AttrDict({
+        'BIPARTITE': networkx.bipartite_layout,
+        'CIRCULAR': networkx.circular_layout,
+        'KAMADA_KAWAI': networkx.kamada_kawai_layout,
+        'RANDOM': networkx.random_layout,
+        'RESCALE': networkx.rescale_layout,
+        'SHELL': networkx.shell_layout,
+        'SPRING': networkx.spring_layout,
+        'SPECTRAL': networkx.spectral_layout
+    })
 
     def __init__(self, path, weighted=False):
         """Deserializes *.json file into four attributes: name, idx, points, lines, and creates graph.
@@ -89,7 +77,7 @@ class Graph(object):
         with the line and a dict of line attributes including line weight with the key 'weight'
         """
 
-        coordinates = self.LAYOUT_MAP[layout](self.graph, **kwargs)
+        coordinates = layout(self.graph, **kwargs)
         points = self.points
         for point in points:
             point[1]['x'], point[1]['y'] = coordinates[point[0]]
