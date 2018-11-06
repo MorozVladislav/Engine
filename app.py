@@ -6,6 +6,8 @@ import tkFileDialog
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, X, Y
 from Tkinter import Tk, StringVar, IntVar, Frame, Menu, Label, Canvas, Scrollbar, Checkbutton
 
+from attrdict import AttrDict
+
 from utils.graph import Graph
 
 
@@ -28,6 +30,12 @@ def prepare_coordinates(func):
 class Application(Frame, object):
     """The application main class."""
 
+    OBJ_TYPE = AttrDict({
+        'POINT': 'point',
+        'LINE': 'line',
+        'WEIGHT': 'weight',
+        'TEXT': 'text'
+    })
     FILE_OPEN_OPTIONS = {
         'mode': 'rb',
         'title': 'Choose *.json file',
@@ -51,6 +59,7 @@ class Application(Frame, object):
         self.font_size = self.r / 2
         self.coordinates, self.weights, self.ids, self.objDict = {}, {}, [], {}
         self.lineDict = {}
+        self.canvas_obj = {self.OBJ_TYPE.POINT:{},self.OBJ_TYPE.LINE:{},self.OBJ_TYPE.WEIGHT:{}}
 
         self.menu = Menu(self)
         filemenu = Menu(self.menu)
@@ -103,6 +112,7 @@ class Application(Frame, object):
         self.scale_x, self.scale_y = None, None
         self.coordinates, self.weights, self.ids, self.objDict = {}, {}, [], {}
         self.lineDict = {}
+        self.canvas_obj = {self.OBJ_TYPE.POINT: {}, self.OBJ_TYPE.LINE: {}, self.OBJ_TYPE.WEIGHT: {}}
         self._graph = value
 
     def file_open(self):
@@ -142,6 +152,7 @@ class Application(Frame, object):
             point_id = self.canvas.create_oval(x - self.r, y - self.r, x + self.r, y + self.r, fill=self.POINT_COLOR)
             text_id = self.canvas.create_text(x, y, text=point[0], font="{} {}".format(self.FONT, self.font_size))
             self.objDict[point_id] = (text_id, point[0])
+            self.canvas_obj[self.OBJ_TYPE.POINT][point_id] = { 'idx': point[0], 'text_id': text_id}
 
     @prepare_coordinates
     def create_lines(self, lines):
@@ -160,6 +171,10 @@ class Application(Frame, object):
             line_id = self.canvas.create_line(x_start, y_start, x_stop, y_stop)
             self.weights[line_id] = ((x_start + x_stop) / 2, (y_start + y_stop) / 2, line[2]['weight'])
             self.lineDict[line_id] = (line[0], line[1])
+            self.canvas_obj[self.OBJ_TYPE.LINE][line_id] =  {'idx': line[2]['idx'], 'weight': line[2]['weight'],
+                                                             'point_start': line[0],'point_end': line[1]}
+
+        #print self.canvas_obj[self.OBJ_TYPE.LINE]
         self.show_weights()
 
     def show_weights(self):
@@ -168,51 +183,55 @@ class Application(Frame, object):
         if len(self.weights) == 0:
             return
         if self.show_weight.get():
-            for weight in self.weights.values():
-                x, y, value = weight
+            for line in self.canvas_obj[self.OBJ_TYPE.LINE].values():
+                x_start,y_start = self.coordinates[line['point_start']]
+                x_end, y_end = self.coordinates[line['point_end']]
+                x, y = self.medium_coordinates(x_start,y_start,x_end, y_end)
+                value = line['weight']
                 r = int(self.r / 2) * len(str(value))
-                self.ids.append(self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=self.BG, width=0))
-                self.ids.append(self.canvas.create_text(x, y, text=value, font="{} {}".format(self.FONT, str(r))))
+                weight_id = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=self.BG, width=0)
+                text_id = self.canvas.create_text(x, y, text=value, font="{} {}".format(self.FONT, str(r)))
+                self.canvas_obj[self.OBJ_TYPE.WEIGHT][weight_id] = {'text_id':text_id}
+                line['weight_id'] = weight_id
         else:
-            for element_id in self.ids:
-                self.canvas.delete(element_id)
+            for key, values in self.canvas_obj[self.OBJ_TYPE.WEIGHT].iteritems():
+                self.canvas.delete(key)
+                self.canvas.delete(values['text_id'])
 
-        # move the point and edges
+    def medium_coordinates(self,x_start,y_start,x_stop,y_stop):
+        return (x_start + x_stop) / 2, (y_start + y_stop) / 2
 
     def movePoint(self, event):
-        # coord_id = self.canv.coords(event.x, event.y,)
+        # move the point and edges
+
         x = self.canvas.canvasx(event.x)
         y = self.canvas.canvasy(event.y)
         obj_id = self.canvas.find_overlapping(x - 5, y - 5, x + 5, y + 5)
         for obj in obj_id:
-            if obj in self.objDict.keys():
-                obj_number = self.objDict[obj][1]
+            if obj in self.canvas_obj[self.OBJ_TYPE.POINT].keys():
+                obj_number = self.canvas_obj[self.OBJ_TYPE.POINT][obj]['idx']
                 self.canvas.coords(obj, event.x - self.r, event.y - self.r, event.x + self.r, event.y + self.r)
                 self.canvas.coords((self.objDict[obj][0]), event.x, event.y)
-                for key, values in self.lineDict.iteritems():
-                    new_point_x = None
-                    new_point_y = None
+                for key, values in self.canvas_obj[self.OBJ_TYPE.LINE].iteritems():
+                    new_point_x = 0
+                    new_point_y = 0
                     # (11, 5, 113.0, 216.0, 61.0, 402.0) -> values
-                    if obj_number in values:
-                        if obj_number == values[0]:
-                            new_point_x, new_point_y = self.coordinates[values[1]]
-                            # new_point_y = values[5]
-                            # el self.lineDict[key]
-                            # self.lineDict[key] = (values[0], values[1], x, y, new_point_x, new_point_y)
+                    if obj_number in (values['point_start'],values['point_end']):
+                        if obj_number == values['point_start']:
+                            new_point_x, new_point_y = self.coordinates[values['point_end']]
                             self.canvas.coords(key, x, y, new_point_x, new_point_y)
 
-                        elif obj_number == values[1]:
-                            new_point_x, new_point_y = self.coordinates[values[0]]
-                            # new_point_y = values[3]
-                            # del self.lineDict[key]
-                            # self.lineDict[key] = (values[0], values[1], new_point_x, new_point_y, x, y)
+                        elif obj_number == values['point_end']:
+                            new_point_x, new_point_y = self.coordinates[values['point_start']]
                             self.canvas.coords(key, new_point_x, new_point_y, x, y)
+                            
                         self.coordinates[obj_number] = (x, y)
-                        self.weights[key] = ((new_point_x + x) / 2, (new_point_y + y) / 2, self.weights[key][2])
 
-                        # self.canvas.coords(key, new_point_x, new_point_y, x, y)
-
-                        # self.lineDict[line_id] = (values[0], values[1], start_point_x,start_point_y,x ,y)
+                        if self.show_weight.get():
+                            x_medium,y_medium = self.medium_coordinates(new_point_x,new_point_y,x,y)
+                            self.canvas.coords(self.canvas_obj[self.OBJ_TYPE.WEIGHT][values['weight_id']]['text_id'], x_medium, y_medium)
+                            r = int(self.r / 2) * len(str(values['weight']))
+                            self.canvas.coords(values['weight_id'],x_medium-r, y_medium-r,x_medium+r, y_medium+r)
 
                 break
 
