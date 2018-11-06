@@ -57,8 +57,7 @@ class Application(Frame, object):
         self.x0, self.y0, self.scale_x, self.scale_y = self.WIDTH / 2, self.HEIGHT / 2, None, None
         self.r = int(0.05 * min(self.x0, self.y0))
         self.font_size = self.r / 2
-        self.coordinates, self.weights, self.ids, self.objDict = {}, {}, [], {}
-        self.lineDict = {}
+        self.coordinates = {}
         self.canvas_obj = {self.OBJ_TYPE.POINT:{},self.OBJ_TYPE.LINE:{},self.OBJ_TYPE.WEIGHT:{}}
 
         self.menu = Menu(self)
@@ -110,8 +109,7 @@ class Application(Frame, object):
 
         self.canvas.delete('all')
         self.scale_x, self.scale_y = None, None
-        self.coordinates, self.weights, self.ids, self.objDict = {}, {}, [], {}
-        self.lineDict = {}
+        self.coordinates = {}
         self.canvas_obj = {self.OBJ_TYPE.POINT: {}, self.OBJ_TYPE.LINE: {}, self.OBJ_TYPE.WEIGHT: {}}
         self._graph = value
 
@@ -151,7 +149,6 @@ class Application(Frame, object):
             x, y = self.coordinates[point[0]]
             point_id = self.canvas.create_oval(x - self.r, y - self.r, x + self.r, y + self.r, fill=self.POINT_COLOR)
             text_id = self.canvas.create_text(x, y, text=point[0], font="{} {}".format(self.FONT, self.font_size))
-            self.objDict[point_id] = (text_id, point[0])
             self.canvas_obj[self.OBJ_TYPE.POINT][point_id] = { 'idx': point[0], 'text_id': text_id}
 
     @prepare_coordinates
@@ -169,12 +166,9 @@ class Application(Frame, object):
             x_start, y_start = self.coordinates[line[0]]
             x_stop, y_stop = self.coordinates[line[1]]
             line_id = self.canvas.create_line(x_start, y_start, x_stop, y_stop)
-            self.weights[line_id] = ((x_start + x_stop) / 2, (y_start + y_stop) / 2, line[2]['weight'])
-            self.lineDict[line_id] = (line[0], line[1])
             self.canvas_obj[self.OBJ_TYPE.LINE][line_id] =  {'idx': line[2]['idx'], 'weight': line[2]['weight'],
                                                              'point_start': line[0],'point_end': line[1]}
 
-        #print self.canvas_obj[self.OBJ_TYPE.LINE]
         self.show_weights()
 
     def show_weights(self):
@@ -212,6 +206,7 @@ class Application(Frame, object):
                 obj_number = self.canvas_obj[self.OBJ_TYPE.POINT][obj]['idx']
                 self.canvas.coords(obj, event.x - self.r, event.y - self.r, event.x + self.r, event.y + self.r)
                 self.canvas.coords((self.objDict[obj][0]), event.x, event.y)
+                
                 for key, values in self.canvas_obj[self.OBJ_TYPE.LINE].iteritems():
                     new_point_x = 0
                     new_point_y = 0
@@ -224,7 +219,7 @@ class Application(Frame, object):
                         elif obj_number == values['point_end']:
                             new_point_x, new_point_y = self.coordinates[values['point_start']]
                             self.canvas.coords(key, new_point_x, new_point_y, x, y)
-                            
+
                         self.coordinates[obj_number] = (x, y)
 
                         if self.show_weight.get():
