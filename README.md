@@ -1,8 +1,8 @@
-# Engine
+# Graph Visualisation App
 
-## Граф визуальный прекрасный I
+## Description
+The application visualizes graphs described by *.json files formatted as example below:
 
-Необходимо разработать программу, которая визуализирует граф представленный в формате JSON
 ```json
 {
     "idx": 1,
@@ -39,16 +39,14 @@
     ]
 }
 ```
-* points - вершины графа;
-* lines - рёбра графа;
-* length - длинна ребра;
-* idx - уникальный индекс для линии.
-Каждую линию образует 2 точки (points).
-Остальную информацию пока можно игнорировать, но в скором будущем она вам возможно понадобится.
 
-Для тестирования вашей программы имеются 2 графа: [big_graph](big_graph.json) и [small_graph](small_graph.json).
-Также необходимо самостоятельно создать ещё минимум 2 графа в заданном формате.
+## Dependencies
+The app requires python2.7 and pip installed. All the rest dependencies are indicated in requirements.txt
 
-Обязательно продумайте наперёд архитектуру вашей программы, чтобы она была открыта для добавления новой функциональности.
-
-Удачи!
+## How to run it
+You can execute run.sh or next commands:
+```
+pip install --upgrade pip
+pip install -r requirements.txt
+python2.7 -m app
+```
