@@ -32,9 +32,7 @@ class Application(Frame, object):
 
     TYPES = AttrDict({
         'POINT': 'point',
-        'LINE': 'line',
-        'WEIGHT': 'weight',
-        'TEXT': 'text'
+        'LINE': 'line'
     })
     FILE_OPEN_OPTIONS = {
         'mode': 'rb',
@@ -55,8 +53,9 @@ class Application(Frame, object):
         self.master.geometry('{}x{}'.format(self.WIDTH, self.HEIGHT))
 
         self._graph, self.points, self.lines = None, None, None
-        self.coordinates, self.canvas_obj = {}, {}
+        self.coordinates, self.canvas_obj, self.captured_lines = {}, {}, {}
         self.x0, self.y0, self.scale_x, self.scale_y, self.r, self.font_size = None, None, None, None, None, None
+        self.captured_point = None
 
         self.menu = Menu(self)
         filemenu = Menu(self.menu)
@@ -71,7 +70,9 @@ class Application(Frame, object):
 
         self.frame = Frame(self)
         self.canvas = Canvas(self.frame, bg=self.BG, scrollregion=(0, 0, self.winfo_width(), self.winfo_height()))
-        self.canvas.bind('<B1-Motion>', self.move_point)
+        self.canvas.bind('<Button-1>', self.capture_point)
+        self.canvas.bind('<Motion>', self.move_point)
+        self.canvas.bind('<B1-ButtonRelease>', self.release_point)
         self.canvas.bind('<Configure>', self.resize_window)
         hbar = Scrollbar(self.frame, orient=HORIZONTAL)
         hbar.pack(side=BOTTOM, fill=X)
@@ -128,8 +129,8 @@ class Application(Frame, object):
     def draw_graph(self):
         """Draws graph by prepared coordinates."""
 
-        self.create_lines()
-        self.create_points()
+        self.draw_lines()
+        self.draw_points()
 
     def clear_graph(self):
         """Clears previously drawn graph and resets coordinates and scales."""
@@ -153,7 +154,7 @@ class Application(Frame, object):
             self.draw_graph()
 
     @prepare_coordinates
-    def create_points(self):
+    def draw_points(self):
         """Draws graph points by prepared coordinates."""
 
         self.canvas_obj[self.TYPES.POINT] = {}
@@ -161,10 +162,10 @@ class Application(Frame, object):
             x, y = self.coordinates[point[0]]
             point_id = self.canvas.create_oval(x - self.r, y - self.r, x + self.r, y + self.r, fill=self.POINT_COLOR)
             text_id = self.canvas.create_text(x, y, text=point[0], font="{} {}".format(self.FONT, self.font_size))
-            self.canvas_obj[self.TYPES.POINT][point_id] = {'idx': point[0], 'text_id': text_id}
+            self.canvas_obj[self.TYPES.POINT][point_id] = {'idx': point[0], 'text_obj': text_id}
 
     @prepare_coordinates
-    def create_lines(self):
+    def draw_lines(self):
         """Draws graph lines by prepared coordinates and shows their weights if self.show_weight is set to 1."""
 
         self.canvas_obj[self.TYPES.LINE] = {}
@@ -172,23 +173,23 @@ class Application(Frame, object):
             x_start, y_start = self.coordinates[line[0]]
             x_stop, y_stop = self.coordinates[line[1]]
             line_id = self.canvas.create_line(x_start, y_start, x_stop, y_stop)
+            self.canvas.tag_lower(line_id)
             self.canvas_obj[self.TYPES.LINE][line_id] = {'idx': line[2]['idx'], 'weight': line[2]['weight'],
-                                                         'point_start': line[0], 'point_end': line[1], 'weight_obj': ()}
-
+                                                         'start_point': line[0], 'end_point': line[1], 'weight_obj': ()}
         self.show_weights()
 
     def show_weights(self):
         """Shows line weights when self.show_weight is set to 1 and hides them when it is set to 0."""
 
-        if len(self.canvas_obj) > 0:
+        if self.canvas_obj:
             if self.show_weight.get():
                 for line in self.canvas_obj[self.TYPES.LINE].values():
-                    if len(line['weight_obj']) != 0:
+                    if line['weight_obj']:
                         self.canvas.itemconfigure(line['weight_obj'][0], state='normal')
                         self.canvas.itemconfigure(line['weight_obj'][1], state='normal')
                     else:
-                        x_start, y_start = self.coordinates[line['point_start']]
-                        x_end, y_end = self.coordinates[line['point_end']]
+                        x_start, y_start = self.coordinates[line['start_point']]
+                        x_end, y_end = self.coordinates[line['end_point']]
                         x, y = self.midpoint(x_start, y_start, x_end, y_end)
                         value = line['weight']
                         r = int(self.r / 2) * len(str(value))
@@ -197,7 +198,7 @@ class Application(Frame, object):
                         line['weight_obj'] = (oval_id, text_id)
             else:
                 for line in self.canvas_obj[self.TYPES.LINE].values():
-                    if len(line['weight_obj']) != 0:
+                    if line['weight_obj']:
                         self.canvas.itemconfigure(line['weight_obj'][0], state='hidden')
                         self.canvas.itemconfigure(line['weight_obj'][1], state='hidden')
 
@@ -214,37 +215,81 @@ class Application(Frame, object):
 
         return (x_start + x_end) / 2, (y_start + y_end) / 2
 
+    def capture_point(self, event):
+        """Captures point and it's lines when mouse button is pressed.
+
+        :param event: Tkinter.Event - Tkinter.Event instance for ButtonPress event
+        :return: None
+        """
+
+        x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+        obj_ids = self.canvas.find_overlapping(x - 5, y - 5, x + 5, y + 5)
+        if obj_ids:
+            for obj_id in obj_ids:
+                if obj_id in self.canvas_obj[self.TYPES.POINT].keys():
+                    self.captured_point = obj_id
+                    point = self.canvas_obj[self.TYPES.POINT][obj_id]['idx']
+                    self.captured_lines = {
+                        'start_point': [],
+                        'end_point': []
+                    }
+                    for key, value in self.canvas_obj[self.TYPES.LINE].items():
+                        if value['start_point'] == point:
+                            self.captured_lines['start_point'].append(key)
+                        if value['end_point'] == point:
+                            self.captured_lines['end_point'].append(key)
+            if self.weighted.get():
+                self.weighted.set(0)
+
+    def release_point(self, event):
+        """Releases point and its lines on Canvas.
+        :param event: Tkinter.Event - Tkinter.Event instance for ButtonRelease event
+        :return: None
+        """
+
+        self.captured_point = None
+        self.captured_lines = {}
+
     def move_point(self, event):
-        """Moves point and its lines on Canvas.
+        """Moves point and its lines on Canvas If self.show_weight is set to 1 moves weights.
 
         :param event: Tkinter.Event - Tkinter.Event instance for Motion event
         :return: None
         """
-        x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-        obj_id = self.canvas.find_overlapping(x - 5, y - 5, x + 5, y + 5)
-        for obj in obj_id:
-            if obj in self.canvas_obj[self.TYPES.POINT].keys():
-                obj_number = self.canvas_obj[self.TYPES.POINT][obj]['idx']
-                self.canvas.coords(obj, event.x - self.r, event.y - self.r, event.x + self.r, event.y + self.r)
-                self.canvas.coords(self.canvas_obj[self.TYPES.POINT][obj]['text_id'], event.x, event.y)
+        if self.captured_point:
+            new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+            self.canvas.coords(self.captured_point, event.x - self.r, event.y - self.r, event.x + self.r,
+                               event.y + self.r)
+            self.canvas.coords(self.canvas_obj[self.TYPES.POINT][self.captured_point]['text_obj'], event.x, event.y)
 
-                for key, values in self.canvas_obj[self.TYPES.LINE].iteritems():
-                    if obj_number in (values['point_start'], values['point_end']):
-                        if obj_number == values['point_start']:
-                            new_point_x, new_point_y = self.coordinates[values['point_end']]
-                            self.canvas.coords(key, x, y, new_point_x, new_point_y)
-                        else:
-                            new_point_x, new_point_y = self.coordinates[values['point_start']]
-                            self.canvas.coords(key, new_point_x, new_point_y, x, y)
+            for line in self.captured_lines['start_point']:
+                line_attrs = self.canvas_obj[self.TYPES.LINE][line]
+                x, y = self.coordinates[line_attrs['end_point']]
+                self.canvas.coords(line, new_x, new_y, x, y)
+                self.coordinates[line_attrs['start_point']] = (new_x, new_y)
+                if self.show_weight.get():
+                    mid_x, mid_y = self.midpoint(new_x, new_y, x, y)
+                    self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
+                    r = int(self.r / 2) * len(str(line_attrs['weight']))
+                    self.canvas.coords(line_attrs['weight_obj'][0], mid_x - r, mid_y - r, mid_x + r, mid_y + r)
 
-                        self.coordinates[obj_number] = (x, y)
+            for line in self.captured_lines['end_point']:
+                line_attrs = self.canvas_obj[self.TYPES.LINE][line]
+                x, y = self.coordinates[line_attrs['start_point']]
+                self.canvas.coords(line, x, y, new_x, new_y)
+                self.coordinates[line_attrs['end_point']] = (new_x, new_y)
+                if self.show_weight.get():
+                    mid_x, mid_y = self.midpoint(x, y, new_x, new_y)
+                    self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
+                    r = int(self.r / 2) * len(str(line_attrs['weight']))
+                    self.canvas.coords(line_attrs['weight_obj'][0], mid_x - r, mid_y - r, mid_x + r, mid_y + r)
 
-                        if self.show_weight.get():
-                            x_medium, y_medium = self.midpoint(new_point_x, new_point_y, x, y)
-                            self.canvas.coords(values['weight_obj'][1], x_medium, y_medium)
-                            r = int(self.r / 2) * len(str(values['weight']))
-                            self.canvas.coords(values['weight_obj'][0], x_medium - r, y_medium - r, x_medium + r,
-                                               y_medium + r)
+            point_idx = self.canvas_obj[self.TYPES.POINT][self.captured_point]['idx']
+            x, y = self.coordinates[point_idx]
+
+            for point in self.points:
+                if point[0] == point_idx:
+                    point[1]['x'], point[1]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
 
     def exit(self):
         """Closes application."""
