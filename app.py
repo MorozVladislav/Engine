@@ -12,7 +12,7 @@ from utils.graph import Graph
 
 
 def prepare_coordinates(func):
-    """Calculates scales and coordinates for drawing in Canvas in case they were not calculated previously."""
+    """Calculates scales and coordinates for drawing in case they were not calculated previously."""
 
     def wrapped(self, *args, **kwargs):
         if self.scale_x is None or self.scale_y is None:
@@ -43,22 +43,20 @@ class Application(Frame, object):
         'filetypes': [('JSON file', '*.json')]
     }
     WIDTH, HEIGHT = 1280, 720
-    BG = "lightblue"
-    POINT_COLOR = 'lightgreen'
+    BG = "white"
+    POINT_COLOR = 'orange'
     FONT = 'Verdana'
 
     def __init__(self, master=None):
-        """Creates application main window with Canvas sizes self.WIDTH and self.HEIGHT."""
+        """Creates application main window with sizes self.WIDTH and self.HEIGHT."""
 
         super(Application, self).__init__(master)
         self.master.title('Graph Visualisation App')
+        self.master.geometry('{}x{}'.format(self.WIDTH, self.HEIGHT))
 
         self._graph, self.points, self.lines = None, None, None
-        self.x0, self.y0, self.scale_x, self.scale_y = self.WIDTH / 2, self.HEIGHT / 2, None, None
-        self.r = int(0.05 * min(self.x0, self.y0))
-        self.font_size = self.r / 2
-        self.coordinates = {}
-        self.canvas_obj = {}
+        self.coordinates, self.canvas_obj = {}, {}
+        self.x0, self.y0, self.scale_x, self.scale_y, self.r, self.font_size = None, None, None, None, None, None
 
         self.menu = Menu(self)
         filemenu = Menu(self.menu)
@@ -72,9 +70,9 @@ class Application(Frame, object):
         self.label = Label(master, textvariable=self.path).pack()
 
         self.frame = Frame(self)
-        self.canvas = Canvas(self.frame, bg=self.BG, scrollregion=(0, 0, self.WIDTH, self.HEIGHT))
-        self.canvas.config(width=self.WIDTH, height=self.HEIGHT)
-        self.canvas.bind('<B1-Motion>', self.move_points)
+        self.canvas = Canvas(self.frame, bg=self.BG, scrollregion=(0, 0, self.winfo_width(), self.winfo_height()))
+        self.canvas.bind('<B1-Motion>', self.move_point)
+        self.canvas.bind('<Configure>', self.resize_window)
         hbar = Scrollbar(self.frame, orient=HORIZONTAL)
         hbar.pack(side=BOTTOM, fill=X)
         hbar.config(command=self.canvas.xview)
@@ -83,7 +81,7 @@ class Application(Frame, object):
         vbar.config(command=self.canvas.yview)
         self.canvas.config(xscrollcommand=hbar.set, yscrollcommand=vbar.set)
         self.canvas.pack(fill=BOTH, expand=True)
-        self.frame.pack()
+        self.frame.pack(fill=BOTH, expand=True)
 
         self.weighted = IntVar()
         self.weighted_check = Checkbutton(self, text='Weighted graph', variable=self.weighted,
@@ -95,7 +93,7 @@ class Application(Frame, object):
                                              command=self.show_weights)
         self.show_weight_check.pack(side=LEFT)
 
-        self.pack()
+        self.pack(fill=BOTH, expand=True)
 
     @property
     def graph(self):
@@ -105,16 +103,13 @@ class Application(Frame, object):
 
     @graph.setter
     def graph(self, value):
-        """Clears Canvas and resets internally used variables each time a new graph is assigned."""
+        """Clears previously drawn graph and assigns a new graph to self._graph."""
 
-        self.canvas.delete('all')
-        self.scale_x, self.scale_y = None, None
-        self.coordinates = {}
-        self.canvas_obj = {}
+        self.clear_graph()
         self._graph = value
 
     def file_open(self):
-        """Implements file dialog and when a file is chosen builds and draws the graph."""
+        """Implements file dialog and builds and draws a graph once a file is chosen."""
 
         try:
             self.path.set(tkFileDialog.askopenfile(parent=root, **self.FILE_OPEN_OPTIONS).name)
@@ -123,48 +118,57 @@ class Application(Frame, object):
         self.build_graph()
 
     def build_graph(self):
-        """Builds and draws graph."""
+        """Builds and draws new graph."""
 
         if self.path.get() != 'No file chosen':
             self.graph = Graph(self.path.get(), weighted=self.weighted.get())
             self.points, self.lines = self.graph.get_coordinates()
-            self.create_lines(self.lines)
-            self.create_points(self.points)
+            self.draw_graph()
 
-    def exit(self):
-        """Closes application."""
+    def draw_graph(self):
+        """Draws graph by prepared coordinates."""
 
-        self.master.destroy()
+        self.create_lines()
+        self.create_points()
 
-    @prepare_coordinates
-    def create_points(self, points):
-        """Draws points in Canvas.
+    def clear_graph(self):
+        """Clears previously drawn graph and resets coordinates and scales."""
 
-        :param points: list - list of tuples where each tuple denotes separate point. Each point is represented by two
-        value which are point idx and a dict of point attributes including point coordinates with keys 'x' and 'y'
+        self.canvas.delete('all')
+        self.scale_x, self.scale_y = None, None
+        self.coordinates = {}
+
+    def resize_window(self, event):
+        """Redraws graph each time main window size changes.
+
+        :param event: Tkinter.Event - Tkinter.Event instance for Configure event
         :return: None
         """
 
+        self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
+        self.r = int(0.05 * min(self.x0, self.y0))
+        self.font_size = self.r / 2
+        if self.graph is not None:
+            self.clear_graph()
+            self.draw_graph()
+
+    @prepare_coordinates
+    def create_points(self):
+        """Draws graph points by prepared coordinates."""
+
         self.canvas_obj[self.TYPES.POINT] = {}
-        for point in points:
+        for point in self.points:
             x, y = self.coordinates[point[0]]
             point_id = self.canvas.create_oval(x - self.r, y - self.r, x + self.r, y + self.r, fill=self.POINT_COLOR)
             text_id = self.canvas.create_text(x, y, text=point[0], font="{} {}".format(self.FONT, self.font_size))
             self.canvas_obj[self.TYPES.POINT][point_id] = {'idx': point[0], 'text_id': text_id}
 
     @prepare_coordinates
-    def create_lines(self, lines):
-        """Draws lines in Canvas and fills list of weights with their coordinates to draw by.
-
-        Shows line weights if self.show_weight is set to 1.
-        :param lines: list - list of tuples where each tuple denotes separate line. Each line is represented by three
-        values which are two idxs of points which are connected with the line and a dict of line attributes including
-        line weight with the key 'weight'
-        :return: None
-        """
+    def create_lines(self):
+        """Draws graph lines by prepared coordinates and shows their weights if self.show_weight is set to 1."""
 
         self.canvas_obj[self.TYPES.LINE] = {}
-        for line in lines:
+        for line in self.lines:
             x_start, y_start = self.coordinates[line[0]]
             x_stop, y_stop = self.coordinates[line[1]]
             line_id = self.canvas.create_line(x_start, y_start, x_stop, y_stop)
@@ -174,42 +178,49 @@ class Application(Frame, object):
         self.show_weights()
 
     def show_weights(self):
-        """Shows line weights when set to 1 and hides them whe set to 0. Returns None if self.weights is empty."""
+        """Shows line weights when self.show_weight is set to 1 and hides them when it is set to 0."""
 
-        if self.show_weight.get():
-            for line in self.canvas_obj[self.TYPES.LINE].values():
-                x_start, y_start = self.coordinates[line['point_start']]
-                x_end, y_end = self.coordinates[line['point_end']]
-                x, y = self.medium_coordinates(x_start, y_start, x_end, y_end)
-                value = line['weight']
-                r = int(self.r / 2) * len(str(value))
-                oval_id = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=self.BG, width=0)
-                text_id = self.canvas.create_text(x, y, text=value, font="{} {}".format(self.FONT, str(r)))
-                line['weight_obj'] = (oval_id, text_id)
-        else:
-            for values in self.canvas_obj[self.TYPES.LINE].values():
-                if len(values['weight_obj']) != 0:
-                    self.canvas.delete(values['weight_obj'][0])
-                    self.canvas.delete(values['weight_obj'][1])
+        if len(self.canvas_obj) > 0:
+            if self.show_weight.get():
+                for line in self.canvas_obj[self.TYPES.LINE].values():
+                    if len(line['weight_obj']) != 0:
+                        self.canvas.itemconfigure(line['weight_obj'][0], state='normal')
+                        self.canvas.itemconfigure(line['weight_obj'][1], state='normal')
+                    else:
+                        x_start, y_start = self.coordinates[line['point_start']]
+                        x_end, y_end = self.coordinates[line['point_end']]
+                        x, y = self.midpoint(x_start, y_start, x_end, y_end)
+                        value = line['weight']
+                        r = int(self.r / 2) * len(str(value))
+                        oval_id = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=self.BG, width=0)
+                        text_id = self.canvas.create_text(x, y, text=value, font="{} {}".format(self.FONT, str(r)))
+                        line['weight_obj'] = (oval_id, text_id)
+            else:
+                for line in self.canvas_obj[self.TYPES.LINE].values():
+                    if len(line['weight_obj']) != 0:
+                        self.canvas.itemconfigure(line['weight_obj'][0], state='hidden')
+                        self.canvas.itemconfigure(line['weight_obj'][1], state='hidden')
 
     @staticmethod
-    def medium_coordinates(x_start, y_start, x_end, y_end):
-        """Calculation the midpoint between two points
+    def midpoint(x_start, y_start, x_end, y_end):
+        """Calculates a midpoint coordinates between two points.
 
-        :param: x_start: x coordinate of the start point,
-        y_start: y coordinate of the start point
-        x_end: y coordinate of the end point
-        y_end: y coordinate of the end point
-        :return: the midpoint coordinates
+        :param x_start: int - x coordinate of the start point
+        :param y_start: int - y coordinate of the start point
+        :param x_end: int - x coordinate of the end point
+        :param y_end: int - y coordinate of the end point
+        :return: 2-tuple of a midpoint coordinates
         """
 
         return (x_start + x_end) / 2, (y_start + y_end) / 2
 
-    def move_points(self, event):
-        """Move the point and edges."""
+    def move_point(self, event):
+        """Moves point and its lines on Canvas.
 
-        x = self.canvas.canvasx(event.x)
-        y = self.canvas.canvasy(event.y)
+        :param event: Tkinter.Event - Tkinter.Event instance for Motion event
+        :return: None
+        """
+        x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         obj_id = self.canvas.find_overlapping(x - 5, y - 5, x + 5, y + 5)
         for obj in obj_id:
             if obj in self.canvas_obj[self.TYPES.POINT].keys():
@@ -229,11 +240,16 @@ class Application(Frame, object):
                         self.coordinates[obj_number] = (x, y)
 
                         if self.show_weight.get():
-                            x_medium, y_medium = self.medium_coordinates(new_point_x, new_point_y, x, y)
+                            x_medium, y_medium = self.midpoint(new_point_x, new_point_y, x, y)
                             self.canvas.coords(values['weight_obj'][1], x_medium, y_medium)
                             r = int(self.r / 2) * len(str(values['weight']))
                             self.canvas.coords(values['weight_obj'][0], x_medium - r, y_medium - r, x_medium + r,
                                                y_medium + r)
+
+    def exit(self):
+        """Closes application."""
+
+        self.master.destroy()
 
 
 if __name__ == '__main__':
