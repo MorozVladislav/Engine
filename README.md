@@ -48,5 +48,5 @@ You can execute run.bat (for Windows) or run.sh (for Linux). In case it doesn't 
 ```
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python2.7 -m app
+python app.py
 ```
