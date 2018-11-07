@@ -44,9 +44,9 @@ The application visualizes graphs described by *.json files formatted as example
 The app requires python2.7 and pip installed. All the rest dependencies are indicated in requirements.txt
 
 ## How to run it
-You can execute run.sh or next commands:
+You can execute run.bat (for Windows) or run.sh (for Linux). In case it doesn't work for you OS you can execute next commands:
 ```
-pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 python2.7 -m app
 ```
