@@ -19,6 +19,7 @@ def default_layout(func):
             else:
                 layout = self.LAYOUTS.SPRING
         return func(self, layout, **kwargs)
+
     return wrapped
 
 

@@ -45,7 +45,8 @@ The app requires python2.7 and pip installed. All the rest dependencies are indi
 
 ## How to run it
 You can execute run.sh or next commands:
-```pip install --upgrade pip
+```
+pip install --upgrade pip
 pip install -r requirements.txt
 python2.7 -m app
 ```
