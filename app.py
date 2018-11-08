@@ -229,24 +229,27 @@ class Application(Frame, object):
                 if obj_id in self.canvas_obj[self.TYPES.POINT].keys():
                     self.captured_point = obj_id
                     point = self.canvas_obj[self.TYPES.POINT][obj_id]['idx']
-                    self.captured_lines = {
-                        'start_point': [],
-                        'end_point': []
-                    }
+                    self.captured_lines = {}
                     for key, value in self.canvas_obj[self.TYPES.LINE].items():
                         if value['start_point'] == point:
-                            self.captured_lines['start_point'].append(key)
+                            self.captured_lines[key] = 'start_point'
                         if value['end_point'] == point:
-                            self.captured_lines['end_point'].append(key)
+                            self.captured_lines[key] = 'end_point'
             if self.weighted.get():
                 self.weighted.set(0)
 
     def release_point(self, event):
-        """Releases point and its lines on Canvas.
+        """Releases point and its lines on Canvas. Writes new coordinates for a moved point.
+
         :param event: Tkinter.Event - Tkinter.Event instance for ButtonRelease event
         :return: None
         """
 
+        point_idx = self.canvas_obj[self.TYPES.POINT][self.captured_point]['idx']
+        x, y = self.coordinates[point_idx]
+        for point in self.points:
+            if point[0] == point_idx:
+                point[1]['x'], point[1]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
         self.captured_point = None
         self.captured_lines = {}
 
@@ -262,34 +265,21 @@ class Application(Frame, object):
                                event.y + self.r)
             self.canvas.coords(self.canvas_obj[self.TYPES.POINT][self.captured_point]['text_obj'], event.x, event.y)
 
-            for line in self.captured_lines['start_point']:
-                line_attrs = self.canvas_obj[self.TYPES.LINE][line]
-                x, y = self.coordinates[line_attrs['end_point']]
-                self.canvas.coords(line, new_x, new_y, x, y)
-                self.coordinates[line_attrs['start_point']] = (new_x, new_y)
+            for key, value in self.captured_lines.items():
+                line_attrs = self.canvas_obj[self.TYPES.LINE][key]
+                if value == 'start_point':
+                    x, y = self.coordinates[line_attrs['end_point']]
+                    self.canvas.coords(key, new_x, new_y, x, y)
+                    self.coordinates[line_attrs['start_point']] = (new_x, new_y)
+                else:
+                    x, y = self.coordinates[line_attrs['start_point']]
+                    self.canvas.coords(key, x, y, new_x, new_y)
+                    self.coordinates[line_attrs['end_point']] = (new_x, new_y)
                 if self.show_weight.get():
                     mid_x, mid_y = self.midpoint(new_x, new_y, x, y)
                     self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
                     r = int(self.r / 2) * len(str(line_attrs['weight']))
                     self.canvas.coords(line_attrs['weight_obj'][0], mid_x - r, mid_y - r, mid_x + r, mid_y + r)
-
-            for line in self.captured_lines['end_point']:
-                line_attrs = self.canvas_obj[self.TYPES.LINE][line]
-                x, y = self.coordinates[line_attrs['start_point']]
-                self.canvas.coords(line, x, y, new_x, new_y)
-                self.coordinates[line_attrs['end_point']] = (new_x, new_y)
-                if self.show_weight.get():
-                    mid_x, mid_y = self.midpoint(x, y, new_x, new_y)
-                    self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
-                    r = int(self.r / 2) * len(str(line_attrs['weight']))
-                    self.canvas.coords(line_attrs['weight_obj'][0], mid_x - r, mid_y - r, mid_x + r, mid_y + r)
-
-            point_idx = self.canvas_obj[self.TYPES.POINT][self.captured_point]['idx']
-            x, y = self.coordinates[point_idx]
-
-            for point in self.points:
-                if point[0] == point_idx:
-                    point[1]['x'], point[1]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
 
     def exit(self):
         """Closes application."""
