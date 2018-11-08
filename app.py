@@ -261,20 +261,19 @@ class Application(Frame, object):
         """
         if self.captured_point:
             new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-            self.canvas.coords(self.captured_point, event.x - self.r, event.y - self.r, event.x + self.r,
-                               event.y + self.r)
-            self.canvas.coords(self.canvas_obj[self.TYPES.POINT][self.captured_point]['text_obj'], event.x, event.y)
+            self.canvas.coords(self.captured_point, new_x - self.r, new_y - self.r, new_x + self.r,
+                               new_y + self.r)
+            self.canvas.coords(self.canvas_obj[self.TYPES.POINT][self.captured_point]['text_obj'], new_x, new_y)
 
             for key, value in self.captured_lines.items():
                 line_attrs = self.canvas_obj[self.TYPES.LINE][key]
                 if value == 'start_point':
                     x, y = self.coordinates[line_attrs['end_point']]
                     self.canvas.coords(key, new_x, new_y, x, y)
-                    self.coordinates[line_attrs['start_point']] = (new_x, new_y)
                 else:
                     x, y = self.coordinates[line_attrs['start_point']]
                     self.canvas.coords(key, x, y, new_x, new_y)
-                    self.coordinates[line_attrs['end_point']] = (new_x, new_y)
+                self.coordinates[self.canvas_obj[self.TYPES.POINT][self.captured_point]['idx']] = (new_x, new_y)
                 if self.show_weight.get():
                     mid_x, mid_y = self.midpoint(new_x, new_y, x, y)
                     self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
