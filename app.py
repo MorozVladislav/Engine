@@ -30,10 +30,6 @@ def prepare_coordinates(func):
 class Application(Frame, object):
     """The application main class."""
 
-    TYPES = AttrDict({
-        'POINT': 'point',
-        'LINE': 'line'
-    })
     FILE_OPEN_OPTIONS = {
         'mode': 'rb',
         'title': 'Choose *.json file',
@@ -53,8 +49,9 @@ class Application(Frame, object):
         self.master.geometry('{}x{}'.format(self.WIDTH, self.HEIGHT))
 
         self._graph, self.points, self.lines = None, None, None
-        self.coordinates, self.canvas_obj, self.captured_lines = {}, {}, {}
+        self.coordinates, self.captured_lines = {}, {}
         self.x0, self.y0, self.scale_x, self.scale_y, self.r, self.font_size = None, None, None, None, None, None
+        self.canvas_obj = AttrDict()
         self.captured_point = None
 
         self.menu = Menu(self)
@@ -69,11 +66,12 @@ class Application(Frame, object):
         self.label = Label(master, textvariable=self.path).pack()
 
         self.frame = Frame(self)
+        self.frame.bind('<Configure>', self.resize_frame)
         self.canvas = Canvas(self.frame, bg=self.BG, scrollregion=(0, 0, self.winfo_width(), self.winfo_height()))
         self.canvas.bind('<Button-1>', self.capture_point)
         self.canvas.bind('<Motion>', self.move_point)
         self.canvas.bind('<B1-ButtonRelease>', self.release_point)
-        self.canvas.bind('<Configure>', self.resize_window)
+        self.canvas.bind('<Configure>', self.resize_canvas)
         hbar = Scrollbar(self.frame, orient=HORIZONTAL)
         hbar.pack(side=BOTTOM, fill=X)
         hbar.config(command=self.canvas.xview)
@@ -109,6 +107,26 @@ class Application(Frame, object):
         self.clear_graph()
         self._graph = value
 
+    def resize_frame(self, event):
+        """Calculates new sizes of point and font each time frame size changes.
+
+        :param event: Tkinter.Event - Tkinter.Event instance for Configure event
+        :return: None
+        """
+        self.r = int(0.05 * min(event.width / 2, event.height / 2))
+        self.font_size = self.r / 2
+
+    def resize_canvas(self, event):
+        """Calculates new center coordinates and redraws graph each time canvas size changes.
+
+        :param event: Tkinter.Event - Tkinter.Event instance for Configure event
+        :return: None
+        """
+        self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
+        if self.graph is not None:
+            self.clear_graph()
+            self.draw_graph()
+
     def file_open(self):
         """Implements file dialog and builds and draws a graph once a file is chosen."""
 
@@ -139,51 +157,39 @@ class Application(Frame, object):
         self.scale_x, self.scale_y = None, None
         self.coordinates = {}
 
-    def resize_window(self, event):
-        """Redraws graph each time main window size changes.
-
-        :param event: Tkinter.Event - Tkinter.Event instance for Configure event
-        :return: None
-        """
-
-        self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
-        self.r = int(0.05 * min(self.x0, self.y0))
-        self.font_size = self.r / 2
-        if self.graph is not None:
-            self.clear_graph()
-            self.draw_graph()
-
     @prepare_coordinates
     def draw_points(self):
         """Draws graph points by prepared coordinates."""
 
-        self.canvas_obj[self.TYPES.POINT] = {}
+        point_objs = {}
         for point in self.points:
             x, y = self.coordinates[point[0]]
             point_id = self.canvas.create_oval(x - self.r, y - self.r, x + self.r, y + self.r, fill=self.POINT_COLOR)
             text_id = self.canvas.create_text(x, y, text=point[0], font="{} {}".format(self.FONT, self.font_size))
-            self.canvas_obj[self.TYPES.POINT][point_id] = {'idx': point[0], 'text_obj': text_id}
+            point_objs[point_id] = {'idx': point[0], 'text_obj': text_id}
+        self.canvas_obj['point'] = point_objs
 
     @prepare_coordinates
     def draw_lines(self):
         """Draws graph lines by prepared coordinates and shows their weights if self.show_weight is set to 1."""
 
-        self.canvas_obj[self.TYPES.LINE] = {}
+        line_objs = {}
         for line in self.lines:
             x_start, y_start = self.coordinates[line[0]]
             x_stop, y_stop = self.coordinates[line[1]]
             line_id = self.canvas.create_line(x_start, y_start, x_stop, y_stop)
             self.canvas.tag_lower(line_id)
-            self.canvas_obj[self.TYPES.LINE][line_id] = {'idx': line[2]['idx'], 'weight': line[2]['weight'],
-                                                         'start_point': line[0], 'end_point': line[1], 'weight_obj': ()}
+            line_objs[line_id] = {'idx': line[2]['idx'], 'weight': line[2]['weight'], 'start_point': line[0],
+                                  'end_point': line[1], 'weight_obj': ()}
+        self.canvas_obj['line'] = line_objs
         self.show_weights()
 
     def show_weights(self):
         """Shows line weights when self.show_weight is set to 1 and hides them when it is set to 0."""
 
-        if self.canvas_obj:
+        if len(self.canvas_obj) > 0:
             if self.show_weight.get():
-                for line in self.canvas_obj[self.TYPES.LINE].values():
+                for line in self.canvas_obj.line.values():
                     if line['weight_obj']:
                         self.canvas.itemconfigure(line['weight_obj'][0], state='normal')
                         self.canvas.itemconfigure(line['weight_obj'][1], state='normal')
@@ -197,7 +203,7 @@ class Application(Frame, object):
                         text_id = self.canvas.create_text(x, y, text=value, font="{} {}".format(self.FONT, str(r)))
                         line['weight_obj'] = (oval_id, text_id)
             else:
-                for line in self.canvas_obj[self.TYPES.LINE].values():
+                for line in self.canvas_obj.line.values():
                     if line['weight_obj']:
                         self.canvas.itemconfigure(line['weight_obj'][0], state='hidden')
                         self.canvas.itemconfigure(line['weight_obj'][1], state='hidden')
@@ -212,7 +218,6 @@ class Application(Frame, object):
         :param y_end: int - y coordinate of the end point
         :return: 2-tuple of a midpoint coordinates
         """
-
         return (x_start + x_end) / 2, (y_start + y_end) / 2
 
     def capture_point(self, event):
@@ -221,16 +226,15 @@ class Application(Frame, object):
         :param event: Tkinter.Event - Tkinter.Event instance for ButtonPress event
         :return: None
         """
-
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         obj_ids = self.canvas.find_overlapping(x - 5, y - 5, x + 5, y + 5)
         if obj_ids:
             for obj_id in obj_ids:
-                if obj_id in self.canvas_obj[self.TYPES.POINT].keys():
+                if obj_id in self.canvas_obj.point.keys():
                     self.captured_point = obj_id
-                    point = self.canvas_obj[self.TYPES.POINT][obj_id]['idx']
+                    point = self.canvas_obj.point[obj_id]['idx']
                     self.captured_lines = {}
-                    for key, value in self.canvas_obj[self.TYPES.LINE].items():
+                    for key, value in self.canvas_obj.line.items():
                         if value['start_point'] == point:
                             self.captured_lines[key] = 'start_point'
                         if value['end_point'] == point:
@@ -245,7 +249,7 @@ class Application(Frame, object):
         :return: None
         """
         if self.captured_point:
-            point_idx = self.canvas_obj[self.TYPES.POINT][self.captured_point]['idx']
+            point_idx = self.canvas_obj.point[self.captured_point]['idx']
             x, y = self.coordinates[point_idx]
             for point in self.points:
                 if point[0] == point_idx:
@@ -261,19 +265,18 @@ class Application(Frame, object):
         """
         if self.captured_point:
             new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-            self.canvas.coords(self.captured_point, new_x - self.r, new_y - self.r, new_x + self.r,
-                               new_y + self.r)
-            self.canvas.coords(self.canvas_obj[self.TYPES.POINT][self.captured_point]['text_obj'], new_x, new_y)
+            self.canvas.coords(self.captured_point, new_x - self.r, new_y - self.r, new_x + self.r, new_y + self.r)
+            self.canvas.coords(self.canvas_obj.point[self.captured_point]['text_obj'], new_x, new_y)
 
             for key, value in self.captured_lines.items():
-                line_attrs = self.canvas_obj[self.TYPES.LINE][key]
+                line_attrs = self.canvas_obj.line[key]
                 if value == 'start_point':
                     x, y = self.coordinates[line_attrs['end_point']]
                     self.canvas.coords(key, new_x, new_y, x, y)
                 else:
                     x, y = self.coordinates[line_attrs['start_point']]
                     self.canvas.coords(key, x, y, new_x, new_y)
-                self.coordinates[self.canvas_obj[self.TYPES.POINT][self.captured_point]['idx']] = (new_x, new_y)
+                self.coordinates[self.canvas_obj.point[self.captured_point]['idx']] = (new_x, new_y)
                 if self.show_weight.get():
                     mid_x, mid_y = self.midpoint(new_x, new_y, x, y)
                     self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
