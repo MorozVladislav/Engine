@@ -244,14 +244,14 @@ class Application(Frame, object):
         :param event: Tkinter.Event - Tkinter.Event instance for ButtonRelease event
         :return: None
         """
-
-        point_idx = self.canvas_obj[self.TYPES.POINT][self.captured_point]['idx']
-        x, y = self.coordinates[point_idx]
-        for point in self.points:
-            if point[0] == point_idx:
-                point[1]['x'], point[1]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
-        self.captured_point = None
-        self.captured_lines = {}
+        if self.captured_point:
+            point_idx = self.canvas_obj[self.TYPES.POINT][self.captured_point]['idx']
+            x, y = self.coordinates[point_idx]
+            for point in self.points:
+                if point[0] == point_idx:
+                    point[1]['x'], point[1]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
+            self.captured_point = None
+            self.captured_lines = {}
 
     def move_point(self, event):
         """Moves point and its lines. Moves weights if self.show_weight is set to 1.
