@@ -216,7 +216,7 @@ class Application(Frame, object):
         return (x_start + x_end) / 2, (y_start + y_end) / 2
 
     def capture_point(self, event):
-        """Captures point and it's lines when mouse button is pressed.
+        """Stores captured point and it's lines.
 
         :param event: Tkinter.Event - Tkinter.Event instance for ButtonPress event
         :return: None
@@ -239,7 +239,7 @@ class Application(Frame, object):
                 self.weighted.set(0)
 
     def release_point(self, event):
-        """Releases point and its lines on Canvas. Writes new coordinates for a moved point.
+        """Writes new coordinates for a moved point and resets self.captured_point and self.captured_lines.
 
         :param event: Tkinter.Event - Tkinter.Event instance for ButtonRelease event
         :return: None
@@ -254,7 +254,7 @@ class Application(Frame, object):
         self.captured_lines = {}
 
     def move_point(self, event):
-        """Moves point and its lines on Canvas If self.show_weight is set to 1 moves weights.
+        """Moves point and its lines. Moves weights if self.show_weight is set to 1.
 
         :param event: Tkinter.Event - Tkinter.Event instance for Motion event
         :return: None
