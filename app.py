@@ -129,7 +129,9 @@ class Application(Frame, object):
                 self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
                 self.clear_graph()
                 self.draw_graph()
-            self.redraw_graph()
+            else:
+                self.redraw_graph()
+            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
     def file_open(self):
         """Implements file dialog and builds and draws a graph once a file is chosen."""
