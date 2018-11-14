@@ -119,17 +119,16 @@ class Application(Frame, object):
         self.font_size = self.r / 2
 
     def resize_canvas(self, event):
-        """Calculates new center coordinates and redraws graph each time canvas size changes.
+        """Redraws graph each time Canvas size changes. Scales graph each time visible part of Canvas is enlarged.
 
         :param event: Tkinter.Event - Tkinter.Event instance for Configure event
         :return: None
         """
-        if self.canvas.bbox('all') is not None:
-            if event.width > self.canvas.bbox('all')[2]:
-                self.x0 = int(event.width / 2)
-            if event.height > self.canvas.bbox('all')[3]:
-                self.y0 = int(event.height / 2)
-            self.canvas.configure(scrollregion=(0, 0, self.x0 * 2, self.y0 * 2))
+        if self.graph is not None:
+            if event.width > self.canvas.bbox('all')[2] and event.height > self.canvas.bbox('all')[3]:
+                self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
+                self.clear_graph()
+                self.draw_graph()
             self.redraw_graph()
 
     def file_open(self):
@@ -163,9 +162,10 @@ class Application(Frame, object):
         self.coordinates = {}
 
     def redraw_graph(self):
-        """Redraws existing graph by newly prepared coordinates."""
+        """Redraws existing graph by existing coordinates."""
+
         if self.graph is not None:
-            self.clear_graph()
+            self.canvas.delete('all')
             self.draw_graph()
 
     @prepare_coordinates
@@ -262,6 +262,7 @@ class Application(Frame, object):
         if self.captured_point:
             point_idx = self.canvas_obj.point[self.captured_point]['idx']
             x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+            self.coordinates[point_idx] = (x, y)
             for point in self.points:
                 if point[0] == point_idx:
                     point[1]['x'], point[1]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
