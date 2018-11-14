@@ -105,6 +105,8 @@ class Application(Frame, object):
         """Clears previously drawn graph and assigns a new graph to self._graph."""
 
         self.clear_graph()
+        self.canvas.configure(scrollregion=(0, 0, self.canvas.winfo_width(), self.canvas.winfo_height()))
+        self.x0, self.y0 = self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2
         self._graph = value
 
     def resize_frame(self, event):
@@ -122,10 +124,13 @@ class Application(Frame, object):
         :param event: Tkinter.Event - Tkinter.Event instance for Configure event
         :return: None
         """
-        self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
-        if self.graph is not None:
-            self.clear_graph()
-            self.draw_graph()
+        if self.canvas.bbox('all') is not None:
+            if event.width > self.canvas.bbox('all')[2]:
+                self.x0 = int(event.width / 2)
+            if event.height > self.canvas.bbox('all')[3]:
+                self.y0 = int(event.height / 2)
+            self.canvas.configure(scrollregion=(0, 0, self.x0 * 2, self.y0 * 2))
+            self.redraw_graph()
 
     def file_open(self):
         """Implements file dialog and builds and draws a graph once a file is chosen."""
@@ -156,6 +161,12 @@ class Application(Frame, object):
         self.canvas.delete('all')
         self.scale_x, self.scale_y = None, None
         self.coordinates = {}
+
+    def redraw_graph(self):
+        """Redraws existing graph by newly prepared coordinates."""
+        if self.graph is not None:
+            self.clear_graph()
+            self.draw_graph()
 
     @prepare_coordinates
     def draw_points(self):
@@ -250,7 +261,7 @@ class Application(Frame, object):
         """
         if self.captured_point:
             point_idx = self.canvas_obj.point[self.captured_point]['idx']
-            x, y = self.coordinates[point_idx]
+            x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
             for point in self.points:
                 if point[0] == point_idx:
                     point[1]['x'], point[1]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
@@ -267,6 +278,7 @@ class Application(Frame, object):
             new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
             self.canvas.coords(self.captured_point, new_x - self.r, new_y - self.r, new_x + self.r, new_y + self.r)
             self.canvas.coords(self.canvas_obj.point[self.captured_point]['text_obj'], new_x, new_y)
+            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
             for key, value in self.captured_lines.items():
                 line_attrs = self.canvas_obj.line[key]
@@ -276,7 +288,6 @@ class Application(Frame, object):
                 else:
                     x, y = self.coordinates[line_attrs['start_point']]
                     self.canvas.coords(key, x, y, new_x, new_y)
-                self.coordinates[self.canvas_obj.point[self.captured_point]['idx']] = (new_x, new_y)
                 if self.show_weight.get():
                     mid_x, mid_y = self.midpoint(new_x, new_y, x, y)
                     self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
