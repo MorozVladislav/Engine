@@ -302,8 +302,6 @@ class Application(Frame, object):
             new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
             self.canvas.coords(self.captured_point, new_x - self.r, new_y - self.r, new_x + self.r, new_y + self.r)
             self.canvas.coords(self.canvas_obj.point[self.captured_point]['text_obj'], new_x, new_y)
-            #reconfiguration of scrollbar, when we change the size of Canvas,
-            #to reach the point position in case it was moved abroad
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
             for key, value in self.captured_lines.items():
