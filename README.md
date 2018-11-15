@@ -50,3 +50,7 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python app.py
 ```
+## Developers
+Moroz Vladislav: https://github.com/MorozVladislav
+Vasilkova Julia: https://github.com/JuliaVasilkova
+Borisov Dmitry: https://github.com/stalkerboray
