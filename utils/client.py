@@ -5,6 +5,7 @@
 import socket
 from json import dumps, loads
 from struct import pack, unpack
+from lya import AttrDict
 
 
 class Response(object):
@@ -35,12 +36,17 @@ class Response(object):
 class Client(object):
     """Game server client main class."""
 
-    def __init__(self, host='wgforge-srv.wargaming.net', port=443):
-        """Initiates client. Default server is wgforge-srv.wargaming.net default port is 443
+    DEFAULTS = 'default_settings.yaml'
+
+    def __init__(self, host=None, port=None):
+        """Initiates client. If whether host or port is None assigns default value from default_settings.yaml.
 
         :param host: str - server hostname or IP address
         :param port: int - port
         """
+        defaults = AttrDict.from_yaml(self.DEFAULTS)
+        host = host if host is not None else defaults.host
+        port = port if port is not None else defaults.port
         self.address = (host, port)
         self.connection = None
 
@@ -72,7 +78,7 @@ class Client(object):
         return Response(status, length, data)
 
     def login(self, name, password=None, num_players=None, game=None):
-        """Sends LOGIN request and receives response.
+        """Sends LOGIN request and receives response. If name is missing throws UsernameMissing exception.
 
         :param name: str - player's name
         :param password: str - player’s password used to verify the connection, if player with the same name tries to
@@ -81,6 +87,8 @@ class Client(object):
         :param game: str - game’s name
         :return: Response instance
         """
+        if name is None:
+            raise UsernameMissing('Username is missing. Login aborted')
         self.connection = socket.create_connection(self.address)
         body = {'name': name}
         if password is not None:
@@ -165,3 +173,11 @@ class Client(object):
         """
         self.send(10, {'layer': 10})
         return self.receive()
+
+
+class GameClientException(Exception):
+    pass
+
+
+class UsernameMissing(GameClientException):
+    pass
