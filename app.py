@@ -295,6 +295,7 @@ class Application(Frame, object):
     def move_point(self, event):
         """Moves point and its lines. Moves weights if self.show_weight is set to 1.
 
+        In case some point is moved beyond Canvas border Canvas scrollregion is resized correspondingly.
         :param event: Tkinter.Event - Tkinter.Event instance for Motion event
         :return: None
         """
