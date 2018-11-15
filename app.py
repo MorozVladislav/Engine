@@ -12,8 +12,11 @@ from utils.graph import Graph
 
 
 def prepare_coordinates(func):
-    """Calculates scales and coordinates for drawing in case they were not calculated previously."""
+    """Calculates scales and coordinates for drawing in case they were not calculated previously.
 
+    :param func: function - function that requires coordinates and scales
+    :return: wrapped function
+    """
     def wrapped(self, *args, **kwargs):
         if self.scale_x is None or self.scale_y is None:
             self.scale_x = int((self.x0 - self.r - 5) / max([abs(point[1]['x']) for point in self.points]))
@@ -42,8 +45,10 @@ class Application(Frame, object):
     FONT = 'Verdana'
 
     def __init__(self, master=None):
-        """Creates application main window with sizes self.WIDTH and self.HEIGHT."""
+        """Creates application main window with sizes self.WIDTH and self.HEIGHT.
 
+        :param master: instance - Tkinter.Tk instance
+        """
         super(Application, self).__init__(master)
         self.master.title('Graph Visualisation App')
         self.master.geometry('{}x{}'.format(self.WIDTH, self.HEIGHT))
@@ -105,6 +110,8 @@ class Application(Frame, object):
         """Clears previously drawn graph and assigns a new graph to self._graph."""
 
         self.clear_graph()
+        self.canvas.configure(scrollregion=(0, 0, self.canvas.winfo_width(), self.canvas.winfo_height()))
+        self.x0, self.y0 = self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2
         self._graph = value
 
     def resize_frame(self, event):
@@ -117,19 +124,25 @@ class Application(Frame, object):
         self.font_size = self.r / 2
 
     def resize_canvas(self, event):
-        """Calculates new center coordinates and redraws graph each time canvas size changes.
+        """Redraws graph each time Canvas size changes. Scales graph each time visible part of Canvas is enlarged.
 
         :param event: Tkinter.Event - Tkinter.Event instance for Configure event
         :return: None
         """
-        self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
         if self.graph is not None:
-            self.clear_graph()
-            self.draw_graph()
+            if event.width > self.canvas.bbox('all')[2] and event.height > self.canvas.bbox('all')[3]:
+                self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
+                self.clear_graph()
+                self.draw_graph()
+            else:
+                self.redraw_graph()
+            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
     def file_open(self):
-        """Implements file dialog and builds and draws a graph once a file is chosen."""
+        """Implements file dialog and builds and draws a graph once a file is chosen.
 
+        :return: None
+        """
         try:
             self.path.set(tkFileDialog.askopenfile(parent=root, **self.FILE_OPEN_OPTIONS).name)
         except AttributeError:
@@ -137,30 +150,47 @@ class Application(Frame, object):
         self.build_graph()
 
     def build_graph(self):
-        """Builds and draws new graph."""
+        """Builds and draws new graph.
 
+        :return: None
+        """
         if self.path.get() != 'No file chosen':
             self.graph = Graph(self.path.get(), weighted=self.weighted.get())
             self.points, self.lines = self.graph.get_coordinates()
             self.draw_graph()
 
     def draw_graph(self):
-        """Draws graph by prepared coordinates."""
+        """Draws graph by prepared coordinates.
 
+        :return: None
+        """
         self.draw_lines()
         self.draw_points()
 
     def clear_graph(self):
-        """Clears previously drawn graph and resets coordinates and scales."""
+        """Clears previously drawn graph and resets coordinates and scales.
 
+        :return: None
+        """
         self.canvas.delete('all')
         self.scale_x, self.scale_y = None, None
         self.coordinates = {}
 
+    def redraw_graph(self):
+        """Redraws existing graph by existing coordinates.
+
+        :return: None
+        """
+        if self.graph is not None:
+            self.canvas.delete('all')
+            self.draw_graph()
+
     @prepare_coordinates
     def draw_points(self):
-        """Draws graph points by prepared coordinates."""
+        """Draws graph points by prepared coordinates.
 
+        :return: None
+        """
         point_objs = {}
         for point in self.points:
             x, y = self.coordinates[point[0]]
@@ -171,8 +201,10 @@ class Application(Frame, object):
 
     @prepare_coordinates
     def draw_lines(self):
-        """Draws graph lines by prepared coordinates and shows their weights if self.show_weight is set to 1."""
+        """Draws graph lines by prepared coordinates and shows their weights if self.show_weight is set to 1.
 
+        :return: None
+        """
         line_objs = {}
         for line in self.lines:
             x_start, y_start = self.coordinates[line[0]]
@@ -185,8 +217,10 @@ class Application(Frame, object):
         self.show_weights()
 
     def show_weights(self):
-        """Shows line weights when self.show_weight is set to 1 and hides them when it is set to 0."""
+        """Shows line weights when self.show_weight is set to 1 and hides them when it is set to 0.
 
+        :return: None
+        """
         if len(self.canvas_obj) > 0:
             if self.show_weight.get():
                 for line in self.canvas_obj.line.values():
@@ -250,7 +284,8 @@ class Application(Frame, object):
         """
         if self.captured_point:
             point_idx = self.canvas_obj.point[self.captured_point]['idx']
-            x, y = self.coordinates[point_idx]
+            x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+            self.coordinates[point_idx] = (x, y)
             for point in self.points:
                 if point[0] == point_idx:
                     point[1]['x'], point[1]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
@@ -260,6 +295,7 @@ class Application(Frame, object):
     def move_point(self, event):
         """Moves point and its lines. Moves weights if self.show_weight is set to 1.
 
+        In case some point is moved beyond Canvas border Canvas scrollregion is resized correspondingly.
         :param event: Tkinter.Event - Tkinter.Event instance for Motion event
         :return: None
         """
@@ -267,6 +303,7 @@ class Application(Frame, object):
             new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
             self.canvas.coords(self.captured_point, new_x - self.r, new_y - self.r, new_x + self.r, new_y + self.r)
             self.canvas.coords(self.canvas_obj.point[self.captured_point]['text_obj'], new_x, new_y)
+            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
             for key, value in self.captured_lines.items():
                 line_attrs = self.canvas_obj.line[key]
@@ -276,7 +313,6 @@ class Application(Frame, object):
                 else:
                     x, y = self.coordinates[line_attrs['start_point']]
                     self.canvas.coords(key, x, y, new_x, new_y)
-                self.coordinates[self.canvas_obj.point[self.captured_point]['idx']] = (new_x, new_y)
                 if self.show_weight.get():
                     mid_x, mid_y = self.midpoint(new_x, new_y, x, y)
                     self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
@@ -284,8 +320,10 @@ class Application(Frame, object):
                     self.canvas.coords(line_attrs['weight_obj'][0], mid_x - r, mid_y - r, mid_x + r, mid_y + r)
 
     def exit(self):
-        """Closes application."""
+        """Closes application.
 
+        :return: None
+        """
         self.master.destroy()
 
 
