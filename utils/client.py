@@ -47,6 +47,8 @@ class Client(object):
         defaults = AttrDict.from_yaml(self.DEFAULTS)
         host = host if host is not None else defaults.host
         port = port if port is not None else defaults.port
+        self.username = None if defaults.username is None else defaults.username
+        self.password = None if defaults.password is None else defaults.password
         self.address = (host, port)
         self.connection = None
 
@@ -87,8 +89,10 @@ class Client(object):
         :param game: str - game’s name
         :return: Response instance
         """
+        name = name if name is not None else self.username
+        password = password if password is not None else self.password
         if name is None:
-            raise UsernameMissing('Username is missing. Login aborted')
+            raise UsernameMissing('username is missing')
         self.connection = socket.create_connection(self.address)
         body = {'name': name}
         if password is not None:
@@ -176,8 +180,12 @@ class Client(object):
 
 
 class GameClientException(Exception):
+    """Parent class for all Client exceptions."""
+
     pass
 
 
 class UsernameMissing(GameClientException):
+    """Missing username exception class."""
+
     pass
