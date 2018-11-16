@@ -8,7 +8,7 @@ from Tkinter import Tk, StringVar, IntVar, Frame, Menu, Label, Canvas, Scrollbar
 
 from attrdict import AttrDict
 
-from utils.graph import Graph
+from graph import Graph
 
 
 def prepare_coordinates(func):
