@@ -50,7 +50,7 @@ class Graph(object):
         self.source = source
         self.weighted = weighted
         self.graph = networkx.Graph()
-        if exists(self.source):
+        if exists(str(self.source)):
             with open(expanduser(self.source)) as input_file:
                 raw_data = load(input_file)
         else:
