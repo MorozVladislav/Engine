@@ -6,6 +6,7 @@ import socket
 from json import dumps, loads
 from struct import pack, unpack
 from lya import AttrDict
+import os
 
 
 class Response(object):
@@ -44,7 +45,8 @@ class Client(object):
         :param host: str - server hostname or IP address
         :param port: int - port
         """
-        defaults = AttrDict.from_yaml(self.DEFAULTS)
+        with open(os.path.expanduser(self.DEFAULTS), 'r') as cfg:
+            defaults = AttrDict.from_yaml(cfg)
         host = host if host is not None else defaults.host
         port = port if port is not None else defaults.port
         self.username = None if defaults.username is None else defaults.username
