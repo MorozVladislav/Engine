@@ -10,11 +10,8 @@ import networkx
 
 
 def default_layout(func):
-    """Sets default layout type depending on whether a graph is weighted or not.
+    """Sets default layout type depending on whether a graph is weighted or not."""
 
-    :param func: function - function that provides coordinates for building a graph
-    :return: wrapped function
-    """
     def wrapped(self, layout=None, **kwargs):
         if layout is None:
             if self.weighted:
@@ -47,6 +44,7 @@ class Graph(object):
         :param weighted: boolean - creates weighted graph when True
         :return: None
         """
+
         self.path = path
         self.weighted = weighted
         self.graph = networkx.Graph()
@@ -79,6 +77,7 @@ class Graph(object):
         separate line. Each line is represented by three values which are two idxs of points which are connected
         with the line and a dict of line attributes including line weight with the key 'weight'
         """
+
         coordinates = layout(self.graph, **kwargs)
         points = self.points
         for point in points:

@@ -1,52 +1,23 @@
-# Graph Visualisation App
+# Engine
 
-## Description
-The application visualizes graphs described by *.json files formatted as example below:
+## Developers
++ ### [MorozVladislav](https://github.com/MorozVladislav) - Мороз Владислав
++ ### [VasilkovaJulia](https://github.com/JuliaVasilkova) - Василькова Юля
++ ### [stalkerboray](https://github.com/stalkerboray) - Борисов Дмитрий
 
-```json
-{
-    "idx": 1,
-    "lines": [
-        {
-            "idx": 192,
-            "length": 1,
-            "points": [
-                112,
-                107
-            ]
-        },
-        {
-            "idx": 193,
-            "length": 2,
-            "points": [
-                101,
-                102
-            ]
-        },
-        ...
-    ],
-    "name": "map01",
-    "points": [
-        {
-            "idx": 101,
-            "post_idx": 13
-        },
-        {
-            "idx": 102,
-            "post_idx": null
-        },
-        ...
-    ]
-}
-```
+## Tasks
 
-## Dependencies
-The app requires python2.7 and pip installed. All the rest dependencies are indicated in requirements.txt
+### Task I
++  ### [Граф визуальный прекрасный I](https://github.com/WG-Forge/Engine/blob/master/tasks/task_1.md)
+
+### Task II
+
++ ### [Клиент игровой великолепный II](https://github.com/WG-Forge/Engine/blob/master/tasks/task_2.md)
 
 ## How to run it
 You can execute run.bat (for Windows) or run.sh (for Linux). In case it doesn't work for your OS you can execute next commands:
 ```
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python app.py
+python src/main.py
 ```
