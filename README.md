@@ -1,4 +1,4 @@
-# Graph Visualisation App
+# Engine
 
 ## Developers
 
