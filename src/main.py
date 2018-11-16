@@ -19,7 +19,7 @@ def prepare_coordinates(func):
     :param func: function - function that requires coordinates and scales
     :return: wrapped function
     """
-
+    
     def wrapped(self, *args, **kwargs):
         if self.scale_x is None or self.scale_y is None:
             self.scale_x = int((self.x0 - self.r - 5) / max([abs(point[1]['x']) for point in self.points]))

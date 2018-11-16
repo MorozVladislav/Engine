@@ -1,18 +1,20 @@
 # Engine
 
 ## Developers
-+ ### [MorozVladislav](https://github.com/MorozVladislav) - Мороз Владислав
-+ ### [VasilkovaJulia](https://github.com/JuliaVasilkova) - Василькова Юля
-+ ### [stalkerboray](https://github.com/stalkerboray) - Борисов Дмитрий
+
++ Мороз Владислав - [Moroz Vladislav](https://github.com/MorozVladislav)
++ Василькова Юля - [Vasilkova Julia](https://github.com/JuliaVasilkova)
++ Борисов Дмитрий - [Borisov Dmitry](https://github.com/stalkerboray)
 
 ## Tasks
 
-### Task I
-+  ### [Граф визуальный прекрасный I](https://github.com/WG-Forge/Engine/blob/master/tasks/task_1.md)
+### Граф визуальный прекрасный I
 
-### Task II
++  [Task 1](https://github.com/WG-Forge/Engine/blob/master/tasks/task_1.md)
 
-+ ### [Клиент игровой великолепный II](https://github.com/WG-Forge/Engine/blob/master/tasks/task_2.md)
+### Клиент игровой великолепный II
+
++  [Task 2](https://github.com/WG-Forge/Engine/blob/master/tasks/task_2.md)
 
 ## How to run it
 You can execute run.bat (for Windows) or run.sh (for Linux). In case it doesn't work for your OS you can execute next commands:
