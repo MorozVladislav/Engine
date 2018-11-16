@@ -1,14 +1,15 @@
-#!/usr/bin/env python
-# coding: utf-8
-
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
 """The module implements application for visualisation of graphs described by *.json files."""
 
+import socket
 import tkFileDialog
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, X, Y
-from Tkinter import Tk, StringVar, IntVar, Frame, Menu, Label, Canvas, Scrollbar, Checkbutton
+from Tkinter import Tk, StringVar, IntVar, Frame, Menu, Label, Canvas, Scrollbar, Checkbutton, Toplevel, Button, Entry
 
 from attrdict import AttrDict
 
+from client import Client, UsernameMissing
 from graph import Graph
 
 
@@ -18,6 +19,7 @@ def prepare_coordinates(func):
     :param func: function - function that requires coordinates and scales
     :return: wrapped function
     """
+
     def wrapped(self, *args, **kwargs):
         if self.scale_x is None or self.scale_y is None:
             self.scale_x = int((self.x0 - self.r - 5) / max([abs(point[1]['x']) for point in self.points]))
@@ -59,42 +61,30 @@ class Application(Frame, object):
         self.x0, self.y0, self.scale_x, self.scale_y, self.r, self.font_size = None, None, None, None, None, None
         self.canvas_obj = AttrDict()
         self.captured_point = None
-        
-        self.zoom_rect_id = None
-        self.ctrl_l_pressed = False
-        self.start_zoom_x, self.start_zoom_y = -1, -1
-        self.zoom_coef =1.0
-        self.zoom_offset=(0,0)
+        self.settings_window, self.server_data = None, None
+        self.client = Client()
 
         self.menu = Menu(self)
         filemenu = Menu(self.menu)
-        filemenu.add_command(label='Open', command=self.file_open)
+        filemenu.add_command(label='Open file', command=self.file_open)
+        filemenu.add_command(label='Server settings', command=self.server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
         self.menu.add_cascade(label='File', menu=filemenu)
         master.config(menu=self.menu)
 
-        self.path = StringVar()
-        self.path.set('No file chosen')
-        self.label = Label(master, textvariable=self.path).pack()
+        self.path = None
+        self.status_bar = StringVar()
+        self.status_bar.set('No file chosen')
+
+        self.label = Label(master, textvariable=self.status_bar).pack()
 
         self.frame = Frame(self)
         self.frame.bind('<Configure>', self.resize_frame)
         self.canvas = Canvas(self.frame, bg=self.BG, scrollregion=(0, 0, self.winfo_width(), self.winfo_height()))
-#         self.canvas.bind('<Button-1>', self.capture_point)
-#         self.canvas.bind('<Motion>', self.move_point)
-#         self.canvas.bind('<B1-ButtonRelease>', self.release_point)
-#         self.canvas.bind('<Configure>', self.resize_canvas)
-        
-        self.canvas.bind('<Button-1>', self.l_button_pressed)
-        self.canvas.bind('<B1-ButtonRelease>', self.l_button_release)
+        self.canvas.bind('<Button-1>', self.capture_point)
+        self.canvas.bind('<Motion>', self.move_point)
+        self.canvas.bind('<B1-ButtonRelease>', self.release_point)
         self.canvas.bind('<Configure>', self.resize_canvas)
-        self.frame.bind('<KeyPress>', self.key_down)
-        self.frame.bind('<KeyRelease>', self.key_up)
-        self.frame.pack()
-        self.frame.focus_set()
-        self.canvas.bind('<Motion>', self.mouse_move)
-
-        
         hbar = Scrollbar(self.frame, orient=HORIZONTAL)
         hbar.pack(side=BOTTOM, fill=X)
         hbar.config(command=self.canvas.xview)
@@ -116,6 +106,11 @@ class Application(Frame, object):
         self.show_weight_check.pack(side=LEFT)
 
         self.pack(fill=BOTH, expand=True)
+
+        self.host = StringVar()
+        self.port = StringVar()
+        self.player_name = StringVar()
+        self.password = StringVar()
 
     @property
     def graph(self):
@@ -162,7 +157,7 @@ class Application(Frame, object):
         :return: None
         """
         try:
-            self.path.set(tkFileDialog.askopenfile(parent=root, **self.FILE_OPEN_OPTIONS).name)
+            self.path = tkFileDialog.askopenfile(parent=root, **self.FILE_OPEN_OPTIONS).name
         except AttributeError:
             return
         self.build_graph()
@@ -172,8 +167,14 @@ class Application(Frame, object):
 
         :return: None
         """
-        if self.path.get() != 'No file chosen':
-            self.graph = Graph(self.path.get(), weighted=self.weighted.get())
+        if self.path is not None or self.server_data is not None:
+            if self.path is not None:
+                self.graph = Graph(self.path, weighted=self.weighted.get())
+                self.path = None
+            elif self.server_data is not None:
+                self.graph = Graph(self.server_data, weighted=self.weighted.get())
+                self.server_data = None
+            self.status_bar.set('Graph name: ' + self.graph.name)
             self.points, self.lines = self.graph.get_coordinates()
             self.draw_graph()
 
@@ -212,7 +213,6 @@ class Application(Frame, object):
         point_objs = {}
         for point in self.points:
             x, y = self.coordinates[point[0]]
-            x, y = self.apply_zoom(x, y)
             point_id = self.canvas.create_oval(x - self.r, y - self.r, x + self.r, y + self.r, fill=self.POINT_COLOR)
             text_id = self.canvas.create_text(x, y, text=point[0], font="{} {}".format(self.FONT, self.font_size))
             point_objs[point_id] = {'idx': point[0], 'text_obj': text_id}
@@ -227,9 +227,7 @@ class Application(Frame, object):
         line_objs = {}
         for line in self.lines:
             x_start, y_start = self.coordinates[line[0]]
-            x_start, y_start = self.apply_zoom(x_start, y_start)
             x_stop, y_stop = self.coordinates[line[1]]
-            x_stop, y_stop = self.apply_zoom(x_stop, y_stop)
             line_id = self.canvas.create_line(x_start, y_start, x_stop, y_stop)
             self.canvas.tag_lower(line_id)
             line_objs[line_id] = {'idx': line[2]['idx'], 'weight': line[2]['weight'], 'start_point': line[0],
@@ -250,10 +248,7 @@ class Application(Frame, object):
                         self.canvas.itemconfigure(line['weight_obj'][1], state='normal')
                     else:
                         x_start, y_start = self.coordinates[line['start_point']]
-                        x_start, y_start = self.apply_zoom(x_start, y_start)
-
                         x_end, y_end = self.coordinates[line['end_point']]
-                        x_end, y_end = self.apply_zoom(x_end, y_end)
                         x, y = self.midpoint(x_start, y_start, x_end, y_end)
                         value = line['weight']
                         r = int(self.r / 2) * len(str(value))
@@ -319,6 +314,7 @@ class Application(Frame, object):
     def move_point(self, event):
         """Moves point and its lines. Moves weights if self.show_weight is set to 1.
 
+        In case some point is moved beyond Canvas border Canvas scrollregion is resized correspondingly.
         :param event: Tkinter.Event - Tkinter.Event instance for Motion event
         :return: None
         """
@@ -326,102 +322,91 @@ class Application(Frame, object):
             new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
             self.canvas.coords(self.captured_point, new_x - self.r, new_y - self.r, new_x + self.r, new_y + self.r)
             self.canvas.coords(self.canvas_obj.point[self.captured_point]['text_obj'], new_x, new_y)
-            #reconfiguration of scrollbar, when we change the size of Canvas,
-            #to reach the point position in case it was moved abroad
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
             for key, value in self.captured_lines.items():
                 line_attrs = self.canvas_obj.line[key]
                 if value == 'start_point':
                     x, y = self.coordinates[line_attrs['end_point']]
-                    x, y = self.apply_zoom(x, y)
                     self.canvas.coords(key, new_x, new_y, x, y)
                 else:
                     x, y = self.coordinates[line_attrs['start_point']]
-                    x, y = self.apply_zoom(x, y)
                     self.canvas.coords(key, x, y, new_x, new_y)
                 if self.show_weight.get():
                     mid_x, mid_y = self.midpoint(new_x, new_y, x, y)
-                    mid_x, mid_y = self.apply_zoom(mid_x, mid_y)
                     self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
                     r = int(self.r / 2) * len(str(line_attrs['weight']))
                     self.canvas.coords(line_attrs['weight_obj'][0], mid_x - r, mid_y - r, mid_x + r, mid_y + r)
 
-    
-    def apply_zoom(self, x, y):
-        return (x+self.zoom_offset[0])*self.zoom_coef, (y+self.zoom_offset[1])*self.zoom_coef
-    
-    def key_up(self, event):
-        # <Ctrl_L> released
-        self.ctrl_l_pressed = ((event.state & 0x0004) != 0)
-        
-        if event.keysym == 'Escape':
-            self.reset_zoom(event)
-    
-    def key_down(self, event):
-        # <Ctrl_L> pressed
-        self.ctrl_l_pressed = ((event.state & 0x0004) != 0)
-        
-    def l_button_pressed(self, event):
-        if self.ctrl_l_pressed:
-            self.start_zoom(event)
-        else:
-            self.capture_point(event)
-    
-    def l_button_release(self, event):
-        if self.ctrl_l_pressed and self.zoom_rect_id != None:
-            self.canvas.delete(self.zoom_rect_id)
-            self.zoom(event)
-            self.start_zoom_x, self.start_zoom_y = -1, -1
-        else:
-            self.release_point(event)
-
-    def mouse_move(self, event):
-        #process zoom rectangle
-        if self.zoom_rect_id:
-            self.canvas.delete(self.zoom_rect_id)
-        if self.ctrl_l_pressed and self.start_zoom_x >= 0:
-            self.zoom_rect_id = self.canvas.create_rectangle(self.start_zoom_x, self.start_zoom_y,
-                                                             event.x, event.y)
-        else:
-            self.move_point(event)    
-            
-    def start_zoom(self, event):
-        self.start_zoom_x, self.start_zoom_y = event.x, event.y  
-    
-    def zoom(self, event):
-        
-        x_coef = float(self.winfo_width())/abs(event.x-self.start_zoom_x)
-        y_coef = float(self.winfo_height())/abs(event.y-self.start_zoom_y)
-        
-        self.zoom_coef = min(x_coef, y_coef)
-        
-        #let's predict the center of our new visable area
-        x0, y0 = (event.x+self.start_zoom_x)/2, (event.y+self.start_zoom_y)/2
-        
-        #move zoom left corner to the canvas if it appears to be outside Canvas
-        x0_new = max(0, x0-(self.winfo_width()/self.zoom_coef)/2)
-        y0_new = max(0, y0-(self.winfo_height()/self.zoom_coef)/2)
-
-        self.zoom_offset = (-x0_new, -y0_new)
-        
-        #Ok Let's finally zoom it!
-        self.clear_graph()
-        self.draw_graph()
-   
-    #restore graph and canvas to default parameters
-    def reset_zoom(self, event):
-        self.zoom_coef =1.0
-        self.zoom_offset=(0,0)
-        self.clear_graph()
-        self.draw_graph()
-    
     def exit(self):
         """Closes application.
 
         :return: None
         """
         self.master.destroy()
+
+    def server_settings(self):
+        """Open server settings window.
+
+        :return: None
+        """
+        self.settings_window = Toplevel()
+
+        self.host.set(self.client.address[0])
+        self.port.set(self.client.address[1])
+
+        Label(self.settings_window, text="Host:").grid(row=0, column=0, sticky="w")
+        Label(self.settings_window, text="Port:").grid(row=1, column=0, sticky="w")
+        Label(self.settings_window, text="Player name:").grid(row=2, column=0, sticky="w")
+        Label(self.settings_window, text="Password:").grid(row=3, column=0, sticky="w")
+
+        Entry(self.settings_window, textvariable=self.host).grid(row=0, column=1, padx=5, pady=5)
+        Entry(self.settings_window, textvariable=self.port).grid(row=1, column=1, padx=5, pady=5)
+        Entry(self.settings_window, textvariable=self.player_name).grid(row=2, column=1, padx=5, pady=5)
+        Entry(self.settings_window, textvariable=self.password).grid(row=3, column=1, padx=5, pady=5)
+
+        Button(self.settings_window, text='Apply', command=self.apply_server_settings).grid(row=4, column=0, padx=5,
+                                                                                            pady=5, sticky="w")
+        Button(self.settings_window, text='Cancel', command=self.cancel_server_settings).grid(row=4, column=1, padx=5,
+                                                                                              pady=5, sticky="e")
+        self.settings_window.grab_set()
+        self.settings_window.focus_set()
+        self.settings_window.wait_window()
+
+    def apply_server_settings(self):
+        """Apply server settings and connection to host.
+
+        :return: None
+        """
+        try:
+            self.client = Client(self.validate_entry(self.host.get()), self.validate_entry(self.port.get()))
+            self.client.login(self.validate_entry(self.player_name.get()), self.validate_entry(self.password.get()))
+            self.server_data = self.client.get_static_objects().data
+            self.build_graph()
+            self.settings_window.destroy()
+        except UsernameMissing as e:
+            self.status_bar.set('Warning: ' + str(e).capitalize())
+        except socket.error as e:
+            self.status_bar.set('Error: ' + str(e).capitalize())
+
+    @staticmethod
+    def validate_entry(text_variable):
+        """Validate string length.
+
+        :param text_variable: string - string to check
+        :return: None if the string length is 0 else the string
+        """
+        if len(text_variable.strip()) == 0:
+            return None
+        else:
+            return text_variable
+
+    def cancel_server_settings(self):
+        """Closes server settings.
+
+        :return: None
+        """
+        self.settings_window.destroy()
 
 
 if __name__ == '__main__':

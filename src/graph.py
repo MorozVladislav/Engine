@@ -2,16 +2,19 @@
 # -*- coding: utf-8 -*-
 """The module implements interface for creating a graph from *.json file describing it."""
 
-from json import load
-from os.path import expanduser
-from attrdict import AttrDict
+from json import load, loads
+from os.path import expanduser, exists
 
 import networkx
+from attrdict import AttrDict
 
 
 def default_layout(func):
-    """Sets default layout type depending on whether a graph is weighted or not."""
+    """Sets default layout type depending on whether a graph is weighted or not.
 
+    :param func: function - function that provides coordinates for building a graph
+    :return: wrapped function
+    """
     def wrapped(self, layout=None, **kwargs):
         if layout is None:
             if self.weighted:
@@ -37,19 +40,21 @@ class Graph(object):
         'SPECTRAL': networkx.spectral_layout
     })
 
-    def __init__(self, path, weighted=False):
-        """Deserializes *.json file into four attributes: name, idx, points, lines, and creates graph.
+    def __init__(self, source, weighted=False):
+        """Deserializes *.json source into four attributes: name, idx, points, lines, and creates graph.
 
-        :param path: string - path to *.json file describing a graph
+        :param source: string - path to *.json file describing a graph or json string
         :param weighted: boolean - creates weighted graph when True
         :return: None
         """
-
-        self.path = path
+        self.source = source
         self.weighted = weighted
         self.graph = networkx.Graph()
-        with open(expanduser(self.path)) as input_file:
-            raw_data = load(input_file)
+        if exists(str(self.source)):
+            with open(expanduser(self.source)) as input_file:
+                raw_data = load(input_file)
+        else:
+            raw_data = loads(self.source)
         self.name = raw_data['name']
         self.idx = raw_data['idx']
         self.points = []
@@ -77,7 +82,6 @@ class Graph(object):
         separate line. Each line is represented by three values which are two idxs of points which are connected
         with the line and a dict of line attributes including line weight with the key 'weight'
         """
-
         coordinates = layout(self.graph, **kwargs)
         points = self.points
         for point in points:
