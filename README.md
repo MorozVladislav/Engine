@@ -1,6 +1,6 @@
 # Engine
 
-# Состав команды
+## Состав команды
 
 + Мороз Владислав - [Moroz Vladislav](https://github.com/MorozVladislav)
 + Василькова Юля - [Vasilkova Julia](https://github.com/JuliaVasilkova)
