@@ -2,12 +2,14 @@
 # -*- coding: utf-8 -*-
 """The module implements application for visualisation of graphs described by *.json files."""
 
+import socket
 import tkFileDialog
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, X, Y
-from Tkinter import Tk, StringVar, IntVar, Frame, Menu, Label, Canvas, Scrollbar, Checkbutton
+from Tkinter import Tk, StringVar, IntVar, Frame, Menu, Label, Canvas, Scrollbar, Checkbutton, Toplevel, Button, Entry
 
 from attrdict import AttrDict
 
+from client import Client, UsernameMissing
 from graph import Graph
 
 
@@ -17,6 +19,7 @@ def prepare_coordinates(func):
     :param func: function - function that requires coordinates and scales
     :return: wrapped function
     """
+    
     def wrapped(self, *args, **kwargs):
         if self.scale_x is None or self.scale_y is None:
             self.scale_x = int((self.x0 - self.r - 5) / max([abs(point[1]['x']) for point in self.points]))
@@ -58,17 +61,22 @@ class Application(Frame, object):
         self.x0, self.y0, self.scale_x, self.scale_y, self.r, self.font_size = None, None, None, None, None, None
         self.canvas_obj = AttrDict()
         self.captured_point = None
+        self.settings_window, self.server_data = None, None
+        self.client = Client()
 
         self.menu = Menu(self)
         filemenu = Menu(self.menu)
-        filemenu.add_command(label='Open', command=self.file_open)
+        filemenu.add_command(label='Open file', command=self.file_open)
+        filemenu.add_command(label='Server settings', command=self.server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
         self.menu.add_cascade(label='File', menu=filemenu)
         master.config(menu=self.menu)
 
-        self.path = StringVar()
-        self.path.set('No file chosen')
-        self.label = Label(master, textvariable=self.path).pack()
+        self.path = None
+        self.status_bar = StringVar()
+        self.status_bar.set('No file chosen')
+
+        self.label = Label(master, textvariable=self.status_bar).pack()
 
         self.frame = Frame(self)
         self.frame.bind('<Configure>', self.resize_frame)
@@ -98,6 +106,11 @@ class Application(Frame, object):
         self.show_weight_check.pack(side=LEFT)
 
         self.pack(fill=BOTH, expand=True)
+
+        self.host = StringVar()
+        self.port = StringVar()
+        self.player_name = StringVar()
+        self.password = StringVar()
 
     @property
     def graph(self):
@@ -144,7 +157,7 @@ class Application(Frame, object):
         :return: None
         """
         try:
-            self.path.set(tkFileDialog.askopenfile(parent=root, **self.FILE_OPEN_OPTIONS).name)
+            self.path = tkFileDialog.askopenfile(parent=root, **self.FILE_OPEN_OPTIONS).name
         except AttributeError:
             return
         self.build_graph()
@@ -154,8 +167,14 @@ class Application(Frame, object):
 
         :return: None
         """
-        if self.path.get() != 'No file chosen':
-            self.graph = Graph(self.path.get(), weighted=self.weighted.get())
+        if self.path is not None or self.server_data is not None:
+            if self.path is not None:
+                self.graph = Graph(self.path, weighted=self.weighted.get())
+                self.path = None
+            elif self.server_data is not None:
+                self.graph = Graph(self.server_data, weighted=self.weighted.get())
+                self.server_data = None
+            self.status_bar.set('Graph name: ' + self.graph.name)
             self.points, self.lines = self.graph.get_coordinates()
             self.draw_graph()
 
@@ -325,6 +344,69 @@ class Application(Frame, object):
         :return: None
         """
         self.master.destroy()
+
+    def server_settings(self):
+        """Open server settings window.
+
+        :return: None
+        """
+        self.settings_window = Toplevel()
+
+        self.host.set(self.client.address[0])
+        self.port.set(self.client.address[1])
+
+        Label(self.settings_window, text="Host:").grid(row=0, column=0, sticky="w")
+        Label(self.settings_window, text="Port:").grid(row=1, column=0, sticky="w")
+        Label(self.settings_window, text="Player name:").grid(row=2, column=0, sticky="w")
+        Label(self.settings_window, text="Password:").grid(row=3, column=0, sticky="w")
+
+        Entry(self.settings_window, textvariable=self.host).grid(row=0, column=1, padx=5, pady=5)
+        Entry(self.settings_window, textvariable=self.port).grid(row=1, column=1, padx=5, pady=5)
+        Entry(self.settings_window, textvariable=self.player_name).grid(row=2, column=1, padx=5, pady=5)
+        Entry(self.settings_window, textvariable=self.password).grid(row=3, column=1, padx=5, pady=5)
+
+        Button(self.settings_window, text='Apply', command=self.apply_server_settings).grid(row=4, column=0, padx=5,
+                                                                                            pady=5, sticky="w")
+        Button(self.settings_window, text='Cancel', command=self.cancel_server_settings).grid(row=4, column=1, padx=5,
+                                                                                              pady=5, sticky="e")
+        self.settings_window.grab_set()
+        self.settings_window.focus_set()
+        self.settings_window.wait_window()
+
+    def apply_server_settings(self):
+        """Apply server settings and connection to host.
+
+        :return: None
+        """
+        try:
+            self.client = Client(self.validate_entry(self.host.get()), self.validate_entry(self.port.get()))
+            self.client.login(self.validate_entry(self.player_name.get()), self.validate_entry(self.password.get()))
+            self.server_data = self.client.get_static_objects().data
+            self.build_graph()
+            self.settings_window.destroy()
+        except UsernameMissing as e:
+            self.status_bar.set('Warning: ' + str(e).capitalize())
+        except socket.error as e:
+            self.status_bar.set('Error: ' + str(e).capitalize())
+
+    @staticmethod
+    def validate_entry(text_variable):
+        """Validate string length.
+
+        :param text_variable: string - string to check
+        :return: None if the string length is 0 else the string
+        """
+        if len(text_variable.strip()) == 0:
+            return None
+        else:
+            return text_variable
+
+    def cancel_server_settings(self):
+        """Closes server settings.
+
+        :return: None
+        """
+        self.settings_window.destroy()
 
 
 if __name__ == '__main__':
