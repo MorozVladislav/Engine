@@ -3,7 +3,7 @@
 """The module implements client for communication with game server by it's protocol."""
 
 import socket
-from json import dumps, loads
+from json import dumps
 from os.path import expanduser
 from struct import pack, unpack
 
@@ -32,7 +32,7 @@ class Response(object):
         """
         self.status = self._STATUS[status]
         self.length = length
-        self.data = loads(data) if data != '' else ''
+        self.data = data if data != '' else ''
 
 
 class Client(object):
