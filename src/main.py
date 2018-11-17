@@ -278,10 +278,10 @@ class Application(Frame, object):
                         x_end, y_end = self.coordinates[line['end_point']]
                         x, y = self.midpoint(x_start, y_start, x_end, y_end)
                         value = line['weight']
-                        r = int(self.r / 2) * len(str(value))
+                        size = self.r / 2
+                        r = int(size) * len(str(value))
                         oval_id = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=self.BG, width=0)
-                        text_id = self.canvas.create_text(x, y, text=value, font="{} {}".format(self.FONT,
-                                                                                                str(self.r / 2)))
+                        text_id = self.canvas.create_text(x, y, text=value, font="{} {}".format(self.FONT, str(size)))
                         line['weight_obj'] = (oval_id, text_id)
             else:
                 for line in self.canvas_obj.line.values():
