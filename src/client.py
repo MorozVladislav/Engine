@@ -63,10 +63,10 @@ class Client(object):
         if exists(expanduser(self.DEFAULTS)):
             with open(expanduser(self.DEFAULTS), 'r') as cfg:
                 defaults = AttrDict.from_yaml(cfg)
-            self.host = host if host is not None else defaults.host
-            self.port = port if port is not None else defaults.port
-            self.username = None if defaults.username is None else defaults.username
-            self.password = None if defaults.password is None else defaults.password
+            self.host = host if host is not None else str(defaults.host)
+            self.port = port if port is not None else int(defaults.port)
+            self.username = None if defaults.username is None else str(defaults.username)
+            self.password = None if defaults.password is None else str(defaults.password)
         else:
             self.host, self.port, self.username, self.password = None, None, None, None
         self.connection = None
