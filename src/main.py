@@ -2,14 +2,16 @@
 # -*- coding: utf-8 -*-
 """The module implements application for visualisation of graphs described by *.json files."""
 
-import socket
 import tkFileDialog
-from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, X, Y
-from Tkinter import Tk, StringVar, IntVar, Frame, Menu, Label, Canvas, Scrollbar, Checkbutton, Toplevel, Button, Entry
+import tkSimpleDialog
+from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, X, Y
+from Tkinter import Tk, Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
+from json import loads
+from socket import error
 
 from attrdict import AttrDict
 
-from client import Client, UsernameMissing
+from client import Client, ClientException
 from graph import Graph
 
 
@@ -19,7 +21,6 @@ def prepare_coordinates(func):
     :param func: function - function that requires coordinates and scales
     :return: wrapped function
     """
-    
     def wrapped(self, *args, **kwargs):
         if self.scale_x is None or self.scale_y is None:
             self.scale_x = int((self.x0 - self.r - 5) / max([abs(point[1]['x']) for point in self.points]))
@@ -29,6 +30,21 @@ def prepare_coordinates(func):
                 x, y = int(point[1]['x'] * self.scale_x + self.x0), int(point[1]['y'] * self.scale_y + self.y0)
                 self.coordinates[point[0]] = (x, y)
         return func(self, *args, **kwargs)
+
+    return wrapped
+
+
+def client_exceptions(func):
+    """Catches all possible exceptions that can be thrown by Client and displays them in status bar.
+
+    :param func: function - function that uses Client methods
+    :return: wrapped function
+    """
+    def wrapped(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        except (ClientException, error) as exc:
+            self.status_bar.set('Error: {}'.format(exc.message))
 
     return wrapped
 
@@ -53,16 +69,20 @@ class Application(Frame, object):
         :param master: instance - Tkinter.Tk instance
         """
         super(Application, self).__init__(master)
-        self.master.title('Graph Visualisation App')
+        self.master.title('Engine Game')
         self.master.geometry('{}x{}'.format(self.WIDTH, self.HEIGHT))
 
-        self._graph, self.points, self.lines = None, None, None
-        self.coordinates, self.captured_lines = {}, {}
+        self.source, self._graph, self.points, self.lines, self.captured_point = None, None, None, None, None
         self.x0, self.y0, self.scale_x, self.scale_y, self.r, self.font_size = None, None, None, None, None, None
+        self.coordinates, self.captured_lines = {}, {}
         self.canvas_obj = AttrDict()
-        self.captured_point = None
-        self.settings_window, self.server_data = None, None
+
         self.client = Client()
+        self.host = self.client.host
+        self.port = self.client.port
+        self.username = self.client.username
+        self.password = self.client.password
+        self.settings_window = None
 
         self.menu = Menu(self)
         filemenu = Menu(self.menu)
@@ -70,12 +90,11 @@ class Application(Frame, object):
         filemenu.add_command(label='Server settings', command=self.server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
         self.menu.add_cascade(label='File', menu=filemenu)
+        self.menu.add_command(label='Play', command=self.get_map)
         master.config(menu=self.menu)
 
-        self.path = None
         self.status_bar = StringVar()
-        self.status_bar.set('No file chosen')
-
+        self.status_bar.set('Ready')
         self.label = Label(master, textvariable=self.status_bar).pack()
 
         self.frame = Frame(self)
@@ -95,7 +114,7 @@ class Application(Frame, object):
         self.canvas.pack(fill=BOTH, expand=True)
         self.frame.pack(fill=BOTH, expand=True)
 
-        self.weighted = IntVar()
+        self.weighted = IntVar(value=1)
         self.weighted_check = Checkbutton(self, text='Weighted graph', variable=self.weighted,
                                           command=self.build_graph)
         self.weighted_check.pack(side=LEFT)
@@ -107,10 +126,7 @@ class Application(Frame, object):
 
         self.pack(fill=BOTH, expand=True)
 
-        self.host = StringVar()
-        self.port = StringVar()
-        self.player_name = StringVar()
-        self.password = StringVar()
+        self.login()
 
     @property
     def graph(self):
@@ -121,7 +137,6 @@ class Application(Frame, object):
     @graph.setter
     def graph(self, value):
         """Clears previously drawn graph and assigns a new graph to self._graph."""
-
         self.clear_graph()
         self.canvas.configure(scrollregion=(0, 0, self.canvas.winfo_width(), self.canvas.winfo_height()))
         self.x0, self.y0 = self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2
@@ -157,24 +172,36 @@ class Application(Frame, object):
         :return: None
         """
         try:
-            self.path = tkFileDialog.askopenfile(parent=root, **self.FILE_OPEN_OPTIONS).name
+            self.source = tkFileDialog.askopenfile(parent=root, **self.FILE_OPEN_OPTIONS).name
         except AttributeError:
             return
         self.build_graph()
+
+    def server_settings(self):
+        """Open server settings window.
+
+        :return: None
+        """
+        ServerSettings(self, title='Server settings')
+        self.login()
+        self.get_map()
+
+    def exit(self):
+        """Closes application and sends logout request.
+
+        :return: None
+        """
+        self.logout()
+        self.master.destroy()
 
     def build_graph(self):
         """Builds and draws new graph.
 
         :return: None
         """
-        if self.path is not None or self.server_data is not None:
-            if self.path is not None:
-                self.graph = Graph(self.path, weighted=self.weighted.get())
-                self.path = None
-            elif self.server_data is not None:
-                self.graph = Graph(self.server_data, weighted=self.weighted.get())
-                self.server_data = None
-            self.status_bar.set('Graph name: ' + self.graph.name)
+        if self.source is not None:
+            self.graph = Graph(self.source, weighted=self.weighted.get())
+            self.status_bar.set('Graph title: ' + self.graph.name)
             self.points, self.lines = self.graph.get_coordinates()
             self.draw_graph()
 
@@ -338,75 +365,70 @@ class Application(Frame, object):
                     r = int(self.r / 2) * len(str(line_attrs['weight']))
                     self.canvas.coords(line_attrs['weight_obj'][0], mid_x - r, mid_y - r, mid_x + r, mid_y + r)
 
-    def exit(self):
-        """Closes application.
+    @client_exceptions
+    def login(self):
+        """Logs in on server and displays username and rating in status bar.
 
         :return: None
         """
-        self.master.destroy()
+        response = loads(self.client.login(name=self.username, password=self.password).data)
+        self.status_bar.set('{}: {}'.format(response['name'], response['rating']))
 
-    def server_settings(self):
-        """Open server settings window.
-
-        :return: None
-        """
-        self.settings_window = Toplevel()
-
-        self.host.set(self.client.address[0])
-        self.port.set(self.client.address[1])
-
-        Label(self.settings_window, text="Host:").grid(row=0, column=0, sticky="w")
-        Label(self.settings_window, text="Port:").grid(row=1, column=0, sticky="w")
-        Label(self.settings_window, text="Player name:").grid(row=2, column=0, sticky="w")
-        Label(self.settings_window, text="Password:").grid(row=3, column=0, sticky="w")
-
-        Entry(self.settings_window, textvariable=self.host).grid(row=0, column=1, padx=5, pady=5)
-        Entry(self.settings_window, textvariable=self.port).grid(row=1, column=1, padx=5, pady=5)
-        Entry(self.settings_window, textvariable=self.player_name).grid(row=2, column=1, padx=5, pady=5)
-        Entry(self.settings_window, textvariable=self.password).grid(row=3, column=1, padx=5, pady=5)
-
-        Button(self.settings_window, text='Apply', command=self.apply_server_settings).grid(row=4, column=0, padx=5,
-                                                                                            pady=5, sticky="w")
-        Button(self.settings_window, text='Cancel', command=self.cancel_server_settings).grid(row=4, column=1, padx=5,
-                                                                                              pady=5, sticky="e")
-        self.settings_window.grab_set()
-        self.settings_window.focus_set()
-        self.settings_window.wait_window()
-
-    def apply_server_settings(self):
-        """Apply server settings and connection to host.
+    @client_exceptions
+    def logout(self):
+        """Logs out on server.
 
         :return: None
         """
-        try:
-            self.client = Client(self.validate_entry(self.host.get()), self.validate_entry(self.port.get()))
-            self.client.login(self.validate_entry(self.player_name.get()), self.validate_entry(self.password.get()))
-            self.server_data = self.client.get_static_objects().data
-            self.build_graph()
-            self.settings_window.destroy()
-        except UsernameMissing as e:
-            self.status_bar.set('Warning: ' + str(e).capitalize())
-        except socket.error as e:
-            self.status_bar.set('Error: ' + str(e).capitalize())
+        self.client.logout()
 
-    @staticmethod
-    def validate_entry(text_variable):
-        """Validate string length.
-
-        :param text_variable: string - string to check
-        :return: None if the string length is 0 else the string
-        """
-        if len(text_variable.strip()) == 0:
-            return None
-        else:
-            return text_variable
-
-    def cancel_server_settings(self):
-        """Closes server settings.
+    @client_exceptions
+    def get_map(self):
+        """Receives map from server and draws it.
 
         :return: None
         """
-        self.settings_window.destroy()
+        self.source = self.client.get_static_objects().data
+        self.build_graph()
+
+
+class ServerSettings(tkSimpleDialog.Dialog):
+    """Server settings window class"""
+
+    def body(self, master):
+        """Creates server settings window.
+
+        :param master: instance - master widget instance
+        :return: Entry instance
+        """
+        self.resizable(False, False)
+        Label(master, text="Host:").grid(row=0, sticky='W')
+        Label(master, text="Port:").grid(row=1, sticky='W')
+        Label(master, text="Player name:").grid(row=2, sticky='W')
+        Label(master, text="Password:").grid(row=3, sticky='W')
+        self.host = Entry(master)
+        self.port = Entry(master)
+        self.username = Entry(master)
+        self.password = Entry(master)
+        self.host.insert(END, self.parent.host if self.parent.host is not None else '')
+        self.port.insert(END, self.parent.port if self.parent.port is not None else '')
+        self.username.insert(END, self.parent.username if self.parent.username is not None else '')
+        self.password.insert(END, self.parent.password if self.parent.password is not None else '')
+        self.host.grid(row=0, column=1)
+        self.port.grid(row=1, column=1)
+        self.username.grid(row=2, column=1)
+        self.password.grid(row=3, column=1)
+        return self.host
+
+    def apply(self):
+        """Assigns entered value to parent host, port username and password attributes
+
+        :return: None
+        """
+        self.parent.host = self.host.get() if self.host.get() != '' else None
+        self.parent.port = int(self.port.get()) if self.port.get() != '' else None
+        self.parent.username = self.username.get() if self.username.get() != '' else None
+        self.parent.password = self.password.get() if self.password.get() != '' else None
 
 
 if __name__ == '__main__':
