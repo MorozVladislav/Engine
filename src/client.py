@@ -4,10 +4,24 @@
 
 import socket
 from json import dumps
-from os.path import expanduser
+from os.path import expanduser, exists
 from struct import pack, unpack
 
 from lya import AttrDict
+
+
+def connection(func):
+    """Checks the connection to be established before request
+
+    :param func: function - function that calls Client methods
+    :return: wrapped function
+    """
+    def wrapped(self, *args, **kwargs):
+        if self.connection is None:
+            raise ConnectionNotEstablished('connection is not established')
+        return func(self, *args, **kwargs)
+
+    return wrapped
 
 
 class Response(object):
@@ -46,15 +60,18 @@ class Client(object):
         :param host: str - server hostname or IP address
         :param port: int - port
         """
-        with open(expanduser(self.DEFAULTS), 'r') as cfg:
-            defaults = AttrDict.from_yaml(cfg)
-        host = host if host is not None else defaults.host
-        port = port if port is not None else defaults.port
-        self.username = None if defaults.username is None else defaults.username
-        self.password = None if defaults.password is None else defaults.password
-        self.address = (host, port)
+        if exists(expanduser(self.DEFAULTS)):
+            with open(expanduser(self.DEFAULTS), 'r') as cfg:
+                defaults = AttrDict.from_yaml(cfg)
+            self.host = host if host is not None else str(defaults.host)
+            self.port = port if port is not None else int(defaults.port)
+            self.username = None if defaults.username is None else str(defaults.username)
+            self.password = None if defaults.password is None else str(defaults.password)
+        else:
+            self.host, self.port, self.username, self.password = None, None, None, None
         self.connection = None
 
+    @connection
     def send(self, action, body=None):
         """Prepares request and sends it
 
@@ -69,6 +86,7 @@ class Client(object):
             request = pack('<i', action) + pack('<i', len(data)) + data
         self.connection.sendall(request)
 
+    @connection
     def receive(self):
         """Receives server response.
 
@@ -82,7 +100,7 @@ class Client(object):
             data += chunk
         return Response(status, length, data)
 
-    def login(self, name, password=None, num_players=None, game=None):
+    def login(self, name=None, password=None, num_players=None, game=None):
         """Sends LOGIN request and receives response. If name is missing throws UsernameMissing exception.
 
         :param name: str - player's name
@@ -92,11 +110,15 @@ class Client(object):
         :param game: str - game’s name
         :return: Response instance
         """
+        if self.host is None:
+            raise HostMissing('host is missing')
+        if self.port is None:
+            raise PortMissing('port is missing')
         name = name if name is not None else self.username
         password = password if password is not None else self.password
         if name is None:
             raise UsernameMissing('username is missing')
-        self.connection = socket.create_connection(self.address)
+        self.connection = socket.create_connection((self.host, self.port))
         body = {'name': name}
         if password is not None:
             body['password'] = password
@@ -182,13 +204,26 @@ class Client(object):
         return self.receive()
 
 
-class GameClientException(Exception):
+class ClientException(Exception):
     """Parent class for all Client exceptions."""
-
     pass
 
 
-class UsernameMissing(GameClientException):
-    """Missing username exception class."""
+class ConnectionNotEstablished(ClientException):
+    """Connection not established exception class"""
+    pass
 
+
+class HostMissing(ClientException):
+    """Missing host exception class"""
+    pass
+
+
+class PortMissing(ClientException):
+    """Missing port exception class"""
+    pass
+
+
+class UsernameMissing(ClientException):
+    """Missing username exception class."""
     pass
