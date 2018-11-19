@@ -73,14 +73,16 @@ class Graph(object):
 
         :param layout: string - graph layout type. Default layout is provided by @default_layout decorator
         :param kwargs: dict - keyword arguments of networkx layout methods
-        :return: 2-tuple of lists; points and lines. The first one is a List of tuples where each tuple denotes separate
-        point. Each point is represented by two values which are point idx and a dict of point attributes including
-        point coordinates with keys 'x' and 'y'. The second one is a List of tuples where each tuple denotes
-        separate line. Each line is represented by three values which are two idxs of points which are connected
-        with the line and a dict of line attributes including line weight with the key 'weight'
+        :return: 2 dicts; points and lines. Both Dicts has point or line index as a key and a Dict of attributes as a
+        value. Point attributes are: x-coordinate, y-coordinate and post idx. Line attributes are: start point,
+        end point and weight
         """
         coordinates = layout(self.graph, **kwargs)
-        points = self.points
-        for point in points:
-            point[1]['x'], point[1]['y'] = coordinates[point[0]]
-        return points, self.lines
+        points = {}
+        for point in self.points:
+            x, y = coordinates[point[0]]
+            points[point[0]] = {'x': x, 'y': y, 'post_idx': point[1]['post_idx']}
+        lines = {}
+        for line in self.lines:
+            lines[line[2]['idx']] = {'start_point': line[0], 'end_point': line[1], 'weight': line[2]['weight']}
+        return points, lines

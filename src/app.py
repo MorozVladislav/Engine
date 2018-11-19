@@ -27,12 +27,12 @@ def prepare_coordinates(func):
         if self.scale_x is None or self.scale_y is None:
             indent_x = max([icon.width() for icon in self.icons.values()]) / 2 + 5
             indent_y = max([icon.height() for icon in self.icons.values()]) / 2 + self.font_size + 5
-            self.scale_x = int((self.x0 - indent_x) / max([abs(point[1]['x']) for point in self.points]))
-            self.scale_y = int((self.y0 - indent_y) / max([abs(point[1]['y']) for point in self.points]))
+            self.scale_x = int((self.x0 - indent_x) / max([abs(point['x']) for point in self.points.values()]))
+            self.scale_y = int((self.y0 - indent_y) / max([abs(point['y']) for point in self.points.values()]))
         if not self.coordinates:
-            for point in self.points:
-                x, y = int(point[1]['x'] * self.scale_x + self.x0), int(point[1]['y'] * self.scale_y + self.y0)
-                self.coordinates[point[0]] = (x, y)
+            for idx, attrs in self.points.items():
+                x, y = int(attrs['x'] * self.scale_x + self.x0), int(attrs['y'] * self.scale_y + self.y0)
+                self.coordinates[idx] = (x, y)
         return func(self, *args, **kwargs)
 
     return wrapped
@@ -88,7 +88,8 @@ class Application(Frame, object):
             1: PhotoImage(file=join('icons', 'city.png')),
             2: PhotoImage(file=join('icons', 'market.png')),
             3: PhotoImage(file=join('icons', 'store.png')),
-            4: PhotoImage(file=join('icons', 'point.png'))
+            4: PhotoImage(file=join('icons', 'train.png')),
+            5: PhotoImage(file=join('icons', 'point.png'))
         }
 
         self.menu = Menu(self)
@@ -97,7 +98,7 @@ class Application(Frame, object):
         filemenu.add_command(label='Server settings', command=self.open_server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
         self.menu.add_cascade(label='File', menu=filemenu)
-        self.menu.add_command(label='Play', command=self.bot)
+        self.menu.add_command(label='Play', command=self.play)
         master.config(menu=self.menu)
 
         self.status_bar = StringVar()
@@ -201,6 +202,12 @@ class Application(Frame, object):
         self.logout()
         self.master.destroy()
 
+    def play(self):
+        """Calls bot for playing the game."""
+        self.client.move_train(1, 1, 1)
+        self.client.turn()
+        self.refresh_map()
+
     def build_map(self):
         """Builds and draws new map."""
         if self.source is not None:
@@ -213,6 +220,7 @@ class Application(Frame, object):
         """Draws map by prepared coordinates."""
         self.draw_lines()
         self.draw_points()
+        self.draw_trains()
 
     def clear_map(self):
         """Clears previously drawn map and resets coordinates and scales."""
@@ -230,35 +238,51 @@ class Application(Frame, object):
     def draw_points(self):
         """Draws map points by prepared coordinates."""
         point_objs = {}
-        for point in self.points:
-            x, y = self.coordinates[point[0]]
-            if self.posts and point[0] in self.posts.keys():
-                icon_id = self.posts[point[0]]['type']
-                text = self.posts[point[0]]['name'].upper()
+        for point in self.points.keys():
+            x, y = self.coordinates[point]
+            if self.posts and point in self.posts.keys():
+                icon_id = self.posts[point]['type']
+                text = self.posts[point]['name'].upper()
                 point_id = self.canvas.create_image(x, y, image=self.icons[icon_id])
                 y -= (self.icons[icon_id].height() / 2) + self.font_size
                 text_id = self.canvas.create_text(x, y, text=text, font="{} {}".format(self.FONT, self.font_size))
             else:
-                icon_id = 4
-                point_id = self.canvas.create_image(x, y - (self.icons[icon_id].height() / 2),
-                                                    image=self.icons[icon_id])
+                icon_id = 5
+                point_id = self.canvas.create_image(x, y, image=self.icons[icon_id])
                 text_id = None
-            point_objs[point_id] = {'idx': point[0], 'text_obj': text_id, 'icon': icon_id}
+            point_objs[point_id] = {'idx': point, 'text_obj': text_id, 'icon': icon_id}
         self.canvas_obj['point'] = point_objs
 
     @prepare_coordinates
     def draw_lines(self):
         """Draws map lines by prepared coordinates and shows their weights if self.show_weight is set to 1."""
         line_objs = {}
-        for line in self.lines:
-            x_start, y_start = self.coordinates[line[0]]
-            x_stop, y_stop = self.coordinates[line[1]]
+        for idx, attrs in self.lines.items():
+            x_start, y_start = self.coordinates[attrs['start_point']]
+            x_stop, y_stop = self.coordinates[attrs['end_point']]
             line_id = self.canvas.create_line(x_start, y_start, x_stop, y_stop)
             self.canvas.tag_lower(line_id)
-            line_objs[line_id] = {'idx': line[2]['idx'], 'weight': line[2]['weight'], 'start_point': line[0],
-                                  'end_point': line[1], 'weight_obj': ()}
+            line_objs[line_id] = {'idx': idx, 'weight': attrs['weight'], 'start_point': attrs['start_point'],
+                                  'end_point': attrs['end_point'], 'weight_obj': ()}
         self.canvas_obj['line'] = line_objs
         self.show_weights()
+
+    @prepare_coordinates
+    def draw_trains(self):
+        """Draws trains by prepared coordinates"""
+        trains = {}
+        for train in self.trains.values():
+            start_point = self.lines[train['line_idx']]['start_point']
+            end_point = self.lines[train['line_idx']]['end_point']
+            weight = self.lines[train['line_idx']]['weight']
+            position = train['position']
+            x_start, y_start = self.coordinates[start_point]
+            x_end, y_end = self.coordinates[end_point]
+            delta_x, delta_y = int((x_start - x_end) / weight) * position, int((y_start - y_end) / weight) * position
+            indent_y = self.icons[4].height() / 2
+            train_id = self.canvas.create_image(x_start - delta_x, y_start - delta_y - indent_y, image=self.icons[4])
+            trains[train_id] = {'icon': 4}
+        self.canvas_obj['train'] = trains
 
     def show_weights(self):
         """Shows line weights when self.show_weight is set to 1 and hides them when it is set to 0."""
@@ -325,12 +349,10 @@ class Application(Frame, object):
         :return: None
         """
         if self.captured_point:
-            point_idx = self.canvas_obj.point[self.captured_point]['idx']
+            idx = self.canvas_obj.point[self.captured_point]['idx']
             x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-            self.coordinates[point_idx] = (x, y)
-            for point in self.points:
-                if point[0] == point_idx:
-                    point[1]['x'], point[1]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
+            self.coordinates[idx] = (x, y)
+            self.points[idx]['x'], self.points[idx]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
             self.captured_point = None
             self.captured_lines = {}
 
@@ -378,8 +400,14 @@ class Application(Frame, object):
 
     @client_exceptions
     def get_map(self):
-        """Requests static and dynamic objects and draws map."""
+        """Requests static and dynamic objects and builds map."""
         self.source = self.client.get_static_objects().data
+        self.refresh_map()
+        self.build_map()
+
+    @client_exceptions
+    def refresh_map(self):
+        """Requests dynamic objects and refreshes map."""
         dynamic_objects = loads(self.client.get_dynamic_objects().data)
         self.idx = dynamic_objects['idx']
         for key, value in dynamic_objects['ratings'].items():
@@ -388,11 +416,7 @@ class Application(Frame, object):
             self.posts[item['point_idx']] = item
         for item in dynamic_objects['trains']:
             self.trains[item['line_idx']] = item
-        self.build_map()
-
-    def bot(self):
-        """Calls bot for playing the game."""
-        pass
+        self.redraw_map()
 
 
 class ServerSettings(tkSimpleDialog.Dialog, object):
