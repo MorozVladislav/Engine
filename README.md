@@ -15,7 +15,7 @@
 [Task 2](tasks/task_2.md)
 
 ## Dependencies
-Application requires python2.7, Tkinter 8.6 and pip installed. All the rest dependencies are indicated in requirements.txt
+The application requires Python2.7, Tkinter 8.6 and pip installed. All the rest dependencies are indicated in requirements.txt
 
 ## How to run it
 You can execute 
@@ -25,5 +25,6 @@ You can execute
 ```
 pip install --upgrade pip
 pip install -r requirements.txt
-python2.7 -m app
+cd src
+python2.7 -m main.py
 ```
