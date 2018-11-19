@@ -3,6 +3,7 @@
 """The module implements interface for creating a graph from *.json file describing it."""
 from json import load
 from os.path import expanduser
+from functools import wraps
 
 import networkx
 from attrdict import AttrDict
@@ -14,6 +15,7 @@ def default_layout(func):
     :param func: function - function that provides coordinates for building a graph
     :return: wrapped function
     """
+    @wraps(func)
     def wrapped(self, layout=None, **kwargs):
         if layout is None:
             if self.weighted:
@@ -27,7 +29,6 @@ def default_layout(func):
 
 class Graph(object):
     """Base class for undirected graphs"""
-
     LAYOUTS = AttrDict({
         'BIPARTITE': networkx.bipartite_layout,
         'CIRCULAR': networkx.circular_layout,
@@ -53,10 +54,8 @@ class Graph(object):
             raw_data = load(input_file)
         self.name = raw_data['name']
         self.idx = raw_data['idx']
-        self.points = []
         self.points = [(item['idx'], {'post_idx': item['post_idx']}) for item in raw_data['points']]
         self.graph.add_nodes_from(self.points)
-        self.lines = []
         self.lines = [(item['points'][0], item['points'][1],
                        {'idx': item['idx'], 'weight': item['length']}) for item in raw_data['lines']]
         if self.weighted:
