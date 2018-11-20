@@ -11,7 +11,7 @@ from os.path import join
 from socket import error
 
 from attrdict import AttrDict
-from PIL import ImageTk
+from PIL.ImageTk import PhotoImage
 
 from client import Client, ClientException
 from graph import Graph
@@ -86,10 +86,10 @@ class Application(Frame, object):
         self._server_settings = [self.client.host, self.client.port, self.client.username, self.client.password]
         self.idx, self.ratings, self.posts, self.trains = None, {}, {}, {}
         self.icons = {
-            1: ImageTk.PhotoImage(file=join('icons', 'city.png')),
-            2: ImageTk.PhotoImage(file=join('icons', 'market.png')),
-            3: ImageTk.PhotoImage(file=join('icons', 'store.png')),
-            4: ImageTk.PhotoImage(file=join('icons', 'point.png'))
+            1: PhotoImage(file=join('icons', 'city.png')),
+            2: PhotoImage(file=join('icons', 'market.png')),
+            3: PhotoImage(file=join('icons', 'store.png')),
+            4: PhotoImage(file=join('icons', 'point.png'))
         }
 
         self.menu = Menu(self)
