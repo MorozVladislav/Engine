@@ -1,8 +1,8 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """The module implements client for communication with game server by it's protocol."""
-
 import socket
+from functools import wraps
 from json import dumps
 from os.path import expanduser, exists
 from struct import pack, unpack
@@ -11,11 +11,12 @@ from lya import AttrDict
 
 
 def connection(func):
-    """Checks the connection to be established before request
+    """Checks the connection to be created before request
 
     :param func: function - function that calls Client methods
     :return: wrapped function
     """
+    @wraps(func)
     def wrapped(self, *args, **kwargs):
         if self.connection is None:
             raise ConnectionNotEstablished('connection is not established')
@@ -26,7 +27,6 @@ def connection(func):
 
 class Response(object):
     """Representation of a server response."""
-
     _STATUS = {
         0: 'OK',
         1: 'BAD_COMMAND',
@@ -51,7 +51,6 @@ class Response(object):
 
 class Client(object):
     """Game server client main class."""
-
     DEFAULTS = 'default_settings.yaml'
 
     def __init__(self, host=None, port=None):
@@ -204,7 +203,7 @@ class Client(object):
         return self.receive()
 
 
-class ClientException(Exception):
+class ClientException(socket.error):
     """Parent class for all Client exceptions."""
     pass
 

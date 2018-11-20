@@ -8,7 +8,6 @@ from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, X, Y
 from functools import wraps
 from json import loads
 from os.path import join
-from socket import error
 
 from attrdict import AttrDict
 from PIL.ImageTk import PhotoImage
@@ -49,7 +48,7 @@ def client_exceptions(func):
     def wrapped(self, *args, **kwargs):
         try:
             return func(self, *args, **kwargs)
-        except (ClientException, error) as exc:
+        except ClientException as exc:
             self.status_bar.set('Error: {}'.format(exc.message))
 
     return wrapped
@@ -247,6 +246,7 @@ class Application(Frame, object):
                 point_id = self.canvas.create_image(x, y, image=self.icons[icon_id])
                 y -= (self.icons[icon_id].height() / 2) + self.font_size
                 text_id = self.canvas.create_text(x, y, text=text, font="{} {}".format(self.FONT, self.font_size))
+                self.canvas.tag_raise(text_id)
             else:
                 icon_id = 5
                 point_id = self.canvas.create_image(x, y, image=self.icons[icon_id])
@@ -408,15 +408,18 @@ class Application(Frame, object):
 
     @client_exceptions
     def refresh_map(self):
-        """Requests dynamic objects and refreshes map."""
+        """Requests dynamic objects and assigns new or changed values."""
         dynamic_objects = loads(self.client.get_dynamic_objects().data)
         self.idx = dynamic_objects['idx']
         for key, value in dynamic_objects['ratings'].items():
-            self.ratings[key] = value
+            if key not in self.ratings.keys() or self.ratings[key] != value:
+                self.ratings[key] = value
         for item in dynamic_objects['posts']:
-            self.posts[item['point_idx']] = item
+            if item['point_idx'] not in self.posts.keys() or self.posts[item['point_idx']] != item:
+                self.posts[item['point_idx']] = item
         for item in dynamic_objects['trains']:
-            self.trains[item['line_idx']] = item
+            if item['idx'] not in self.trains.keys() or self.trains[item['idx']] != item:
+                self.trains[item['idx']] = item
         self.redraw_map()
 
 
