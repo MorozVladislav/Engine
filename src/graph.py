@@ -1,12 +1,12 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """The module implements interface for creating a graph from *.json file describing it."""
-
 from json import load
 from os.path import expanduser
-from attrdict import AttrDict
+from functools import wraps
 
 import networkx
+from attrdict import AttrDict
 
 
 def default_layout(func):
@@ -15,6 +15,7 @@ def default_layout(func):
     :param func: function - function that provides coordinates for building a graph
     :return: wrapped function
     """
+    @wraps(func)
     def wrapped(self, layout=None, **kwargs):
         if layout is None:
             if self.weighted:
@@ -28,7 +29,6 @@ def default_layout(func):
 
 class Graph(object):
     """Base class for undirected graphs"""
-
     LAYOUTS = AttrDict({
         'BIPARTITE': networkx.bipartite_layout,
         'CIRCULAR': networkx.circular_layout,
@@ -54,13 +54,10 @@ class Graph(object):
             raw_data = load(input_file)
         self.name = raw_data['name']
         self.idx = raw_data['idx']
-        self.points = []
-        for item in raw_data['points']:
-            self.points.append((item['idx'], {'post_idx': item['post_idx']}))
+        self.points = [(item['idx'], {'post_idx': item['post_idx']}) for item in raw_data['points']]
         self.graph.add_nodes_from(self.points)
-        self.lines = []
-        for item in raw_data['lines']:
-            self.lines.append((item['points'][0], item['points'][1], {'idx': item['idx'], 'weight': item['length']}))
+        self.lines = [(item['points'][0], item['points'][1],
+                       {'idx': item['idx'], 'weight': item['length']}) for item in raw_data['lines']]
         if self.weighted:
             weighted_lines = [(line[0], line[1], line[2]['weight']) for line in self.lines]
             self.graph.add_weighted_edges_from(weighted_lines)
