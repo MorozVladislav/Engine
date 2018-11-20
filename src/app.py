@@ -3,7 +3,7 @@
 """The module implements GUI of the game."""
 import tkFileDialog
 import tkSimpleDialog
-from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry, PhotoImage
+from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, X, Y
 from functools import wraps
 from json import loads
@@ -11,6 +11,7 @@ from os.path import join
 from socket import error
 
 from attrdict import AttrDict
+from PIL.ImageTk import PhotoImage
 
 from client import Client, ClientException
 from graph import Graph
