@@ -8,9 +8,10 @@ from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, X, Y
 from functools import wraps
 from json import loads
 from os.path import join
+from socket import error, herror, gaierror, timeout
 
-from attrdict import AttrDict
 from PIL.ImageTk import PhotoImage
+from attrdict import AttrDict
 
 from client import Client, ClientException
 from graph import Graph
@@ -48,7 +49,7 @@ def client_exceptions(func):
     def wrapped(self, *args, **kwargs):
         try:
             return func(self, *args, **kwargs)
-        except ClientException as exc:
+        except (ClientException, error, herror, gaierror, timeout) as exc:
             self.status_bar.set('Error: {}'.format(exc.message))
 
     return wrapped
@@ -83,7 +84,7 @@ class Application(Frame, object):
         self.settings_window = None
         self.client = Client()
         self._server_settings = [self.client.host, self.client.port, self.client.username, self.client.password]
-        self.idx, self.ratings, self.posts, self.trains = None, {}, {}, {}
+        self.player_idx, self.idx, self._ratings, self._posts, self._trains = None, None, {}, {}, {}
         self.icons = {
             1: PhotoImage(file=join('icons', 'city.png')),
             2: PhotoImage(file=join('icons', 'market.png')),
@@ -103,15 +104,15 @@ class Application(Frame, object):
 
         self.status_bar = StringVar()
         self.status_bar.set('Ready')
-        self.label = Label(master, textvariable=self.status_bar).pack()
+        Label(master, textvariable=self.status_bar).pack()
 
         self.frame = Frame(self)
-        self.frame.bind('<Configure>', self.resize_frame)
+        self.frame.bind('<Configure>', self._resize_frame)
         self.canvas = Canvas(self.frame, bg=self.BG, scrollregion=(0, 0, self.winfo_width(), self.winfo_height()))
         self.canvas.bind('<Button-1>', self.capture_point)
         self.canvas.bind('<Motion>', self.move_point)
         self.canvas.bind('<B1-ButtonRelease>', self.release_point)
-        self.canvas.bind('<Configure>', self.resize_canvas)
+        self.canvas.bind('<Configure>', self._resize_canvas)
         hbar = Scrollbar(self.frame, orient=HORIZONTAL)
         hbar.pack(side=BOTTOM, fill=X)
         hbar.config(command=self.canvas.xview)
@@ -151,17 +152,80 @@ class Application(Frame, object):
 
     @property
     def server_settings(self):
-        """Returns a list of actual server settings."""
+        """Returns the list of actual server settings."""
         return self._server_settings
 
     @server_settings.setter
     def server_settings(self, value):
-        """Logs in and receives map each time a list of server settings was assigned."""
-        self._server_settings = value
-        self.login()
-        self.get_map()
+        """Logs in and receives map each time a non-empty list of server settings was assigned."""
+        if value:
+            self._server_settings = value
+            self.login()
+            self.get_map()
+        else:
+            self._server_settings = []
 
-    def resize_frame(self, event):
+    @property
+    def ratings(self):
+        """Returns the dict of actual ratings."""
+        return self._ratings
+
+    @ratings.setter
+    def ratings(self, value):
+        """Shows player's rating in status bar each time a non-empty dict of ratings is assigned."""
+        if value:
+            self._ratings = value
+            self.status_bar.set('{}: {}'.format(value[self.player_idx]['name'], value[self.player_idx]['rating']))
+        else:
+            self._ratings = {}
+
+    @property
+    def posts(self):
+        """Returns the dict of actual posts."""
+        return self._posts
+
+    @posts.setter
+    def posts(self, value):
+        """Redraws map each time a non-empty dict of posts is assigned and at least 1 post is added or changed.
+
+        :param value: list - list of posts
+        :return: None
+        """
+        changed = False
+        if value:
+            for item in value:
+                if item['point_idx'] not in self._posts.keys() or self._posts[item['point_idx']] != item:
+                    self._posts[item['point_idx']] = item
+                    changed = True
+            if changed:
+                self.redraw_map()
+        else:
+            self._posts = {}
+
+    @property
+    def trains(self):
+        """Returns the actual trains."""
+        return self._trains
+
+    @trains.setter
+    def trains(self, value):
+        """Redraws trains each time a non-empty dict of trains is assigned and at least 1 train is added or changed.
+
+        :param value: list - list of trains
+        :return: None
+        """
+        changed = False
+        if value:
+            for item in value:
+                if item['idx'] not in self._trains.keys() or self._trains[item['idx']] != item:
+                    self._trains[item['idx']] = item
+                    changed = True
+            if changed:
+                self.redraw_trains()
+        else:
+            self._trains = {}
+
+    def _resize_frame(self, event):
         """Calculates new font size each time frame size changes.
 
         :param event: Tkinter.Event - Tkinter.Event instance for Configure event
@@ -169,7 +233,7 @@ class Application(Frame, object):
         """
         self.font_size = int(0.0125 * min(event.width, event.height))
 
-    def resize_canvas(self, event):
+    def _resize_canvas(self, event):
         """Redraws map each time Canvas size changes. Scales map each time visible part of Canvas is enlarged.
 
         :param event: Tkinter.Event - Tkinter.Event instance for Configure event
@@ -185,7 +249,7 @@ class Application(Frame, object):
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
     def file_open(self):
-        """Implements file dialog and builds and draws a map once a file is chosen."""
+        """Opens file dialog and builds and draws a map once a file is chosen."""
         try:
             self.source = tkFileDialog.askopenfile(parent=self.master, **self.FILE_OPEN_OPTIONS).name
         except AttributeError:
@@ -194,7 +258,7 @@ class Application(Frame, object):
         self.build_map()
 
     def open_server_settings(self):
-        """Open server settings window."""
+        """Opens server settings window."""
         ServerSettings(self, title='Server settings')
 
     def exit(self):
@@ -202,17 +266,15 @@ class Application(Frame, object):
         self.logout()
         self.master.destroy()
 
+    @client_exceptions
     def play(self):
         """Calls bot for playing the game."""
-        self.client.move_train(1, 1, 1)
-        self.client.turn()
-        self.refresh_map()
+        pass
 
     def build_map(self):
         """Builds and draws new map."""
         if self.source is not None:
             self.map = Graph(self.source, weighted=self.weighted.get())
-            self.status_bar.set('Map title: ' + self.map.name)
             self.points, self.lines = self.map.get_coordinates()
             self.draw_map()
 
@@ -230,9 +292,16 @@ class Application(Frame, object):
 
     def redraw_map(self):
         """Redraws existing map by existing coordinates."""
-        if self.map is not None:
+        if self.map:
             self.canvas.delete('all')
             self.draw_map()
+
+    def redraw_trains(self):
+        """Redraws existing trains."""
+        if self.trains and hasattr(self.canvas_obj, 'trains'):
+            for train in self.canvas_obj.trains.keys():
+                self.canvas.delete(train)
+            self.draw_trains()
 
     @prepare_coordinates
     def draw_points(self):
@@ -389,9 +458,10 @@ class Application(Frame, object):
     @client_exceptions
     def login(self):
         """Sends log in request and displays username and rating in status bar."""
-        self.idx, self.ratings, self.posts, self.trains = None, {}, {}, {}
+        self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
         self.client.host, self.client.port = self.server_settings[:2]
         response = loads(self.client.login(name=self.server_settings[2], password=self.server_settings[3]).data)
+        self.player_idx = response['idx']
         self.status_bar.set('{}: {}'.format(response['name'], response['rating']))
 
     @client_exceptions
@@ -411,16 +481,9 @@ class Application(Frame, object):
         """Requests dynamic objects and assigns new or changed values."""
         dynamic_objects = loads(self.client.get_dynamic_objects().data)
         self.idx = dynamic_objects['idx']
-        for key, value in dynamic_objects['ratings'].items():
-            if key not in self.ratings.keys() or self.ratings[key] != value:
-                self.ratings[key] = value
-        for item in dynamic_objects['posts']:
-            if item['point_idx'] not in self.posts.keys() or self.posts[item['point_idx']] != item:
-                self.posts[item['point_idx']] = item
-        for item in dynamic_objects['trains']:
-            if item['idx'] not in self.trains.keys() or self.trains[item['idx']] != item:
-                self.trains[item['idx']] = item
-        self.redraw_map()
+        self.ratings = dynamic_objects['ratings']
+        self.posts = dynamic_objects['posts']
+        self.trains = dynamic_objects['trains']
 
 
 class ServerSettings(tkSimpleDialog.Dialog, object):
