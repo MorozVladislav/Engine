@@ -250,10 +250,9 @@ class Application(Frame, object):
 
     def file_open(self):
         """Opens file dialog and builds and draws a map once a file is chosen."""
-        try:
-            self.source = tkFileDialog.askopenfile(parent=self.master, **self.FILE_OPEN_OPTIONS).name
-        except AttributeError:
-            return
+        path = tkFileDialog.askopenfile(parent=self.master, **self.FILE_OPEN_OPTIONS)
+        if path:
+            self.source = path.name
         self.idx, self.ratings, self.posts, self.trains = None, {}, {}, {}
         self.build_map()
 
@@ -356,7 +355,7 @@ class Application(Frame, object):
 
     def show_weights(self):
         """Shows line weights when self.show_weight is set to 1 and hides them when it is set to 0."""
-        if len(self.canvas_obj) > 0:
+        if self.canvas_obj:
             if self.show_weight.get():
                 for line in self.canvas_obj.line.values():
                     if line['weight_obj']:
