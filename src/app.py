@@ -4,7 +4,7 @@
 import tkFileDialog
 import tkSimpleDialog
 from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
-from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, DISABLED, X, Y
+from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, DISABLED, NORMAL, X, Y
 from functools import wraps
 from json import loads
 from os.path import join
@@ -344,8 +344,11 @@ class Application(Frame, object):
         path = tkFileDialog.askopenfile(parent=self.master, **self.FILE_OPEN_OPTIONS)
         if path:
             self.source = path.name
-        self.idx, self.ratings, self.posts, self.trains = None, {}, {}, {}
-        self.build_map()
+            if self.client.connection:
+                self.client.logout()
+            self.weighted_check.configure(state=NORMAL)
+            self.idx, self.ratings, self.posts, self.trains = None, {}, {}, {}
+            self.build_map()
 
     def open_server_settings(self):
         """Opens server settings window."""
@@ -365,6 +368,7 @@ class Application(Frame, object):
         """Builds and draws new map."""
         if self.source is not None:
             self.map = Graph(self.source, weighted=self.weighted.get())
+            self.status_bar = 'Map title: {}'.format(self.map.name)
             self.points, self.lines = self.map.get_coordinates()
             self.draw_map()
 
