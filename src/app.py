@@ -268,9 +268,9 @@ class Application(Frame, object):
                 self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
                 self.clear_map()
                 self.draw_map()
-                self.draw_trains()
             else:
                 self.redraw_map()
+            self.draw_trains()
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
     def _capture_point(self, event):
