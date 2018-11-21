@@ -4,7 +4,7 @@
 import tkFileDialog
 import tkSimpleDialog
 from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
-from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, X, Y
+from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, DISABLED, X, Y
 from functools import wraps
 from json import loads
 from os.path import join
@@ -50,7 +50,7 @@ def client_exceptions(func):
         try:
             return func(self, *args, **kwargs)
         except (ClientException, error, herror, gaierror, timeout) as exc:
-            self.status_bar.set('Error: {}'.format(exc.message))
+            self.status_bar = 'Error: {}'.format(exc.message)
 
     return wrapped
 
@@ -102,16 +102,16 @@ class Application(Frame, object):
         self.menu.add_command(label='Play', command=self.play)
         master.config(menu=self.menu)
 
-        self.status_bar = StringVar()
-        self.status_bar.set('Ready')
-        Label(master, textvariable=self.status_bar).pack()
+        self._status_bar = StringVar()
+        self.label = Label(master, textvariable=self._status_bar)
+        self.label.pack()
 
         self.frame = Frame(self)
         self.frame.bind('<Configure>', self._resize_frame)
         self.canvas = Canvas(self.frame, bg=self.BG, scrollregion=(0, 0, self.winfo_width(), self.winfo_height()))
-        self.canvas.bind('<Button-1>', self.capture_point)
-        self.canvas.bind('<Motion>', self.move_point)
-        self.canvas.bind('<B1-ButtonRelease>', self.release_point)
+        self.canvas.bind('<Button-1>', self._capture_point)
+        self.canvas.bind('<Motion>', self._move_point)
+        self.canvas.bind('<B1-ButtonRelease>', self._release_point)
         self.canvas.bind('<Configure>', self._resize_canvas)
         hbar = Scrollbar(self.frame, orient=HORIZONTAL)
         hbar.pack(side=BOTTOM, fill=X)
@@ -138,6 +138,17 @@ class Application(Frame, object):
         self.login()
 
     @property
+    def status_bar(self):
+        """Returns the actual status bar value."""
+        return self._status_bar.get()
+
+    @status_bar.setter
+    def status_bar(self, value):
+        """Assigns new status bar value and updates corresponding value."""
+        self._status_bar.set(value)
+        self.label.update()
+
+    @property
     def map(self):
         """Returns the actual map."""
         return self._map
@@ -162,6 +173,7 @@ class Application(Frame, object):
             self._server_settings = value
             self.login()
             self.get_map()
+            self.draw_trains()
         else:
             self._server_settings = []
 
@@ -175,7 +187,7 @@ class Application(Frame, object):
         """Shows player's rating in status bar each time a non-empty dict of ratings is assigned."""
         if value:
             self._ratings = value
-            self.status_bar.set('{}: {}'.format(value[self.player_idx]['name'], value[self.player_idx]['rating']))
+            self.status_bar = '{}: {}'.format(value[self.player_idx]['name'], value[self.player_idx]['rating'])
         else:
             self._ratings = {}
 
@@ -225,6 +237,18 @@ class Application(Frame, object):
         else:
             self._trains = {}
 
+    @staticmethod
+    def midpoint(x_start, y_start, x_end, y_end):
+        """Calculates a midpoint coordinates between two points.
+
+        :param x_start: int - x coordinate of the start point
+        :param y_start: int - y coordinate of the start point
+        :param x_end: int - x coordinate of the end point
+        :param y_end: int - y coordinate of the end point
+        :return: 2-tuple of a midpoint coordinates
+        """
+        return (x_start + x_end) / 2, (y_start + y_end) / 2
+
     def _resize_frame(self, event):
         """Calculates new font size each time frame size changes.
 
@@ -244,9 +268,76 @@ class Application(Frame, object):
                 self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
                 self.clear_map()
                 self.draw_map()
+                self.draw_trains()
             else:
                 self.redraw_map()
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+
+    def _capture_point(self, event):
+        """Stores captured point and it's lines.
+
+        :param event: Tkinter.Event - Tkinter.Event instance for ButtonPress event
+        :return: None
+        """
+        x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+        obj_ids = self.canvas.find_overlapping(x - 5, y - 5, x + 5, y + 5)
+        if not obj_ids or self.client.connection:
+            return
+        for obj_id in obj_ids:
+            if obj_id in self.canvas_obj.point.keys():
+                self.captured_point = obj_id
+                point = self.canvas_obj.point[obj_id]['idx']
+                self.captured_lines = {}
+                for key, value in self.canvas_obj.line.items():
+                    if value['start_point'] == point:
+                        self.captured_lines[key] = 'start_point'
+                    if value['end_point'] == point:
+                        self.captured_lines[key] = 'end_point'
+        if self.weighted.get():
+            self.weighted.set(0)
+
+    def _release_point(self, event):
+        """Writes new coordinates for a moved point and resets self.captured_point and self.captured_lines.
+
+        :param event: Tkinter.Event - Tkinter.Event instance for ButtonRelease event
+        :return: None
+        """
+        if self.captured_point and not self.client.connection:
+            idx = self.canvas_obj.point[self.captured_point]['idx']
+            x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+            self.coordinates[idx] = (x, y)
+            self.points[idx]['x'], self.points[idx]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
+            self.captured_point = None
+            self.captured_lines = {}
+
+    def _move_point(self, event):
+        """Moves point and its lines. Moves weights if self.show_weight is set to 1.
+
+        In case some point is moved beyond Canvas border Canvas scrollregion is resized correspondingly.
+        :param event: Tkinter.Event - Tkinter.Event instance for Motion event
+        :return: None
+        """
+        if self.captured_point and not self.client.connection:
+            new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+            self.canvas.coords(self.captured_point, new_x, new_y)
+            indent_y = self.icons[self.canvas_obj.point[self.captured_point]['icon']].height() / 2 + self.font_size
+            if self.canvas_obj.point[self.captured_point]['text_obj'] is not None:
+                self.canvas.coords(self.canvas_obj.point[self.captured_point]['text_obj'], new_x, new_y - indent_y)
+            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+
+            for key, value in self.captured_lines.items():
+                line_attrs = self.canvas_obj.line[key]
+                if value == 'start_point':
+                    x, y = self.coordinates[line_attrs['end_point']]
+                    self.canvas.coords(key, new_x, new_y, x, y)
+                else:
+                    x, y = self.coordinates[line_attrs['start_point']]
+                    self.canvas.coords(key, x, y, new_x, new_y)
+                if self.show_weight.get():
+                    mid_x, mid_y = self.midpoint(new_x, new_y, x, y)
+                    self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
+                    r = self.font_size * len(str(line_attrs['weight']))
+                    self.canvas.coords(line_attrs['weight_obj'][0], mid_x - r, mid_y - r, mid_x + r, mid_y + r)
 
     def file_open(self):
         """Opens file dialog and builds and draws a map once a file is chosen."""
@@ -281,7 +372,6 @@ class Application(Frame, object):
         """Draws map by prepared coordinates."""
         self.draw_lines()
         self.draw_points()
-        self.draw_trains()
 
     def clear_map(self):
         """Clears previously drawn map and resets coordinates and scales."""
@@ -297,8 +387,8 @@ class Application(Frame, object):
 
     def redraw_trains(self):
         """Redraws existing trains."""
-        if self.trains and hasattr(self.canvas_obj, 'trains'):
-            for train in self.canvas_obj.trains.keys():
+        if self.trains and hasattr(self.canvas_obj, 'train'):
+            for train in self.canvas_obj.train.keys():
                 self.canvas.delete(train)
             self.draw_trains()
 
@@ -355,113 +445,40 @@ class Application(Frame, object):
 
     def show_weights(self):
         """Shows line weights when self.show_weight is set to 1 and hides them when it is set to 0."""
-        if self.canvas_obj:
-            if self.show_weight.get():
-                for line in self.canvas_obj.line.values():
-                    if line['weight_obj']:
-                        for obj in line['weight_obj']:
-                            self.canvas.itemconfigure(obj, state='normal')
-                    else:
-                        x_start, y_start = self.coordinates[line['start_point']]
-                        x_end, y_end = self.coordinates[line['end_point']]
-                        x, y = self.midpoint(x_start, y_start, x_end, y_end)
-                        value = line['weight']
-                        size = self.font_size
-                        r = int(size) * len(str(value))
-                        oval_id = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=self.BG, width=0)
-                        text_id = self.canvas.create_text(x, y, text=value, font="{} {}".format(self.FONT, str(size)))
-                        line['weight_obj'] = (oval_id, text_id)
-            else:
-                for line in self.canvas_obj.line.values():
-                    if line['weight_obj']:
-                        for obj in line['weight_obj']:
-                            self.canvas.itemconfigure(obj, state='hidden')
-
-    @staticmethod
-    def midpoint(x_start, y_start, x_end, y_end):
-        """Calculates a midpoint coordinates between two points.
-
-        :param x_start: int - x coordinate of the start point
-        :param y_start: int - y coordinate of the start point
-        :param x_end: int - x coordinate of the end point
-        :param y_end: int - y coordinate of the end point
-        :return: 2-tuple of a midpoint coordinates
-        """
-        return (x_start + x_end) / 2, (y_start + y_end) / 2
-
-    def capture_point(self, event):
-        """Stores captured point and it's lines.
-
-        :param event: Tkinter.Event - Tkinter.Event instance for ButtonPress event
-        :return: None
-        """
-        x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-        obj_ids = self.canvas.find_overlapping(x - 5, y - 5, x + 5, y + 5)
-        if obj_ids:
-            for obj_id in obj_ids:
-                if obj_id in self.canvas_obj.point.keys():
-                    self.captured_point = obj_id
-                    point = self.canvas_obj.point[obj_id]['idx']
-                    self.captured_lines = {}
-                    for key, value in self.canvas_obj.line.items():
-                        if value['start_point'] == point:
-                            self.captured_lines[key] = 'start_point'
-                        if value['end_point'] == point:
-                            self.captured_lines[key] = 'end_point'
-            if self.weighted.get():
-                self.weighted.set(0)
-
-    def release_point(self, event):
-        """Writes new coordinates for a moved point and resets self.captured_point and self.captured_lines.
-
-        :param event: Tkinter.Event - Tkinter.Event instance for ButtonRelease event
-        :return: None
-        """
-        if self.captured_point:
-            idx = self.canvas_obj.point[self.captured_point]['idx']
-            x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-            self.coordinates[idx] = (x, y)
-            self.points[idx]['x'], self.points[idx]['y'] = (x - self.x0) / self.scale_x, (y - self.y0) / self.scale_y
-            self.captured_point = None
-            self.captured_lines = {}
-
-    def move_point(self, event):
-        """Moves point and its lines. Moves weights if self.show_weight is set to 1.
-
-        In case some point is moved beyond Canvas border Canvas scrollregion is resized correspondingly.
-        :param event: Tkinter.Event - Tkinter.Event instance for Motion event
-        :return: None
-        """
-        if self.captured_point:
-            new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-            self.canvas.coords(self.captured_point, new_x, new_y)
-            indent_y = self.icons[self.canvas_obj.point[self.captured_point]['icon']].height() / 2 + self.font_size
-            if self.canvas_obj.point[self.captured_point]['text_obj'] is not None:
-                self.canvas.coords(self.canvas_obj.point[self.captured_point]['text_obj'], new_x, new_y - indent_y)
-            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
-
-            for key, value in self.captured_lines.items():
-                line_attrs = self.canvas_obj.line[key]
-                if value == 'start_point':
-                    x, y = self.coordinates[line_attrs['end_point']]
-                    self.canvas.coords(key, new_x, new_y, x, y)
+        if not self.canvas_obj:
+            return
+        if self.show_weight.get():
+            for line in self.canvas_obj.line.values():
+                if line['weight_obj']:
+                    for obj in line['weight_obj']:
+                        self.canvas.itemconfigure(obj, state='normal')
                 else:
-                    x, y = self.coordinates[line_attrs['start_point']]
-                    self.canvas.coords(key, x, y, new_x, new_y)
-                if self.show_weight.get():
-                    mid_x, mid_y = self.midpoint(new_x, new_y, x, y)
-                    self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
-                    r = self.font_size * len(str(line_attrs['weight']))
-                    self.canvas.coords(line_attrs['weight_obj'][0], mid_x - r, mid_y - r, mid_x + r, mid_y + r)
+                    x_start, y_start = self.coordinates[line['start_point']]
+                    x_end, y_end = self.coordinates[line['end_point']]
+                    x, y = self.midpoint(x_start, y_start, x_end, y_end)
+                    value = line['weight']
+                    size = self.font_size
+                    r = int(size) * len(str(value))
+                    oval_id = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=self.BG, width=0)
+                    text_id = self.canvas.create_text(x, y, text=value, font="{} {}".format(self.FONT, str(size)))
+                    line['weight_obj'] = (oval_id, text_id)
+        else:
+            for line in self.canvas_obj.line.values():
+                if line['weight_obj']:
+                    for obj in line['weight_obj']:
+                        self.canvas.itemconfigure(obj, state='hidden')
 
     @client_exceptions
     def login(self):
         """Sends log in request and displays username and rating in status bar."""
+        self.status_bar = 'Connecting...'
         self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
         self.client.host, self.client.port = self.server_settings[:2]
         response = loads(self.client.login(name=self.server_settings[2], password=self.server_settings[3]).data)
         self.player_idx = response['idx']
-        self.status_bar.set('{}: {}'.format(response['name'], response['rating']))
+        self.status_bar = '{}: {}'.format(response['name'], response['rating'])
+        self.weighted.set(1)
+        self.weighted_check.configure(state=DISABLED)
 
     @client_exceptions
     def logout(self):
@@ -474,15 +491,18 @@ class Application(Frame, object):
         self.source = self.client.get_static_objects().data
         self.refresh_map()
         self.build_map()
+        self.canvas.update()
 
     @client_exceptions
     def refresh_map(self):
         """Requests dynamic objects and assigns new or changed values."""
+        self.client.turn()
         dynamic_objects = loads(self.client.get_dynamic_objects().data)
         self.idx = dynamic_objects['idx']
         self.ratings = dynamic_objects['ratings']
         self.posts = dynamic_objects['posts']
         self.trains = dynamic_objects['trains']
+        self.canvas.update()
 
 
 class ServerSettings(tkSimpleDialog.Dialog, object):
