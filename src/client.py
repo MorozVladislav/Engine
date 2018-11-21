@@ -1,9 +1,9 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """The module implements client for communication with game server by it's protocol."""
-
 import socket
-from json import dumps
+from functools import wraps
+from json import dumps, loads
 from os.path import expanduser, exists
 from struct import pack, unpack
 
@@ -11,11 +11,12 @@ from lya import AttrDict
 
 
 def connection(func):
-    """Checks the connection to be established before request
+    """Checks the connection to be created before request
 
     :param func: function - function that calls Client methods
     :return: wrapped function
     """
+    @wraps(func)
     def wrapped(self, *args, **kwargs):
         if self.connection is None:
             raise ConnectionNotEstablished('connection is not established')
@@ -26,8 +27,7 @@ def connection(func):
 
 class Response(object):
     """Representation of a server response."""
-
-    _STATUS = {
+    STATUS = {
         0: 'OK',
         1: 'BAD_COMMAND',
         2: 'RESOURCE_NOT_FOUND',
@@ -44,17 +44,16 @@ class Response(object):
         :param length: int - response body length
         :param data: str - response body in JASON format
         """
-        self.status = self._STATUS[status]
+        self.status = self.STATUS[status]
         self.length = length
         self.data = data if data != '' else ''
 
 
 class Client(object):
     """Game server client main class."""
-
     DEFAULTS = 'default_settings.yaml'
 
-    def __init__(self, host=None, port=None):
+    def __init__(self, host=None, port=None, timeout=None):
         """Initiates client. If whether host or port is None assigns default value from default_settings.yaml.
 
         :param host: str - server hostname or IP address
@@ -65,6 +64,7 @@ class Client(object):
                 defaults = AttrDict.from_yaml(cfg)
             self.host = host if host is not None else str(defaults.host)
             self.port = port if port is not None else int(defaults.port)
+            self.timeout = timeout if timeout is not None else int(defaults.timeout)
             self.username = None if defaults.username is None else str(defaults.username)
             self.password = None if defaults.password is None else str(defaults.password)
         else:
@@ -98,6 +98,9 @@ class Client(object):
         while len(data) < length:
             chunk = self.connection.recv(length)
             data += chunk
+        if status != 0:
+            message = loads(data)['error'] if data != '' else ''
+            raise BadServerResponse('{} {}'.format(Response.STATUS[status], message))
         return Response(status, length, data)
 
     def login(self, name=None, password=None, num_players=None, game=None):
@@ -118,7 +121,7 @@ class Client(object):
         password = password if password is not None else self.password
         if name is None:
             raise UsernameMissing('username is missing')
-        self.connection = socket.create_connection((self.host, self.port))
+        self.connection = socket.create_connection((self.host, self.port), self.timeout)
         body = {'name': name}
         if password is not None:
             body['password'] = password
@@ -226,4 +229,9 @@ class PortMissing(ClientException):
 
 class UsernameMissing(ClientException):
     """Missing username exception class."""
+    pass
+
+
+class BadServerResponse(ClientException):
+    """Bad server response exception class."""
     pass
