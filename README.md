@@ -23,7 +23,6 @@ You can execute
   - run.bat
   - or next commands:
 ```
-pip install --upgrade pip
 pip install -r requirements.txt
 cd src
 python2.7 -m main.py
