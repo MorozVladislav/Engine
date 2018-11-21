@@ -26,8 +26,8 @@ def prepare_coordinates(func):
     @wraps(func)
     def wrapped(self, *args, **kwargs):
         if self.scale_x is None or self.scale_y is None:
-            indent_x = max([icon.width() for icon in self.icons.values()]) / 2 + 5
-            indent_y = max([icon.height() for icon in self.icons.values()]) / 2 + self.font_size + 5
+            indent_x = max([icon.width() for icon in self.icons.values()]) + 5
+            indent_y = max([icon.height() for icon in self.icons.values()]) + self.font_size + 5
             self.scale_x = int((self.x0 - indent_x) / max([abs(point['x']) for point in self.points.values()]))
             self.scale_y = int((self.y0 - indent_y) / max([abs(point['y']) for point in self.points.values()]))
         if not self.coordinates:
