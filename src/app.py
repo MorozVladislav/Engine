@@ -4,7 +4,7 @@
 import tkFileDialog
 import tkSimpleDialog
 from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
-from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, DISABLED, NORMAL, X, Y
+from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, X, Y
 from functools import wraps
 from json import loads
 from os.path import join
@@ -125,7 +125,7 @@ class Application(Frame, object):
 
         self.weighted = IntVar(value=1)
         self.weighted_check = Checkbutton(self, text='Proportionally to weight', variable=self.weighted,
-                                          command=self.build_map)
+                                          command=self._proportionally)
         self.weighted_check.pack(side=LEFT)
 
         self.show_weight = IntVar()
@@ -170,10 +170,11 @@ class Application(Frame, object):
     def server_settings(self, value):
         """Logs in and receives map each time a non-empty list of server settings was assigned."""
         if value:
+            if self.client.connection:
+                self.logout()
             self._server_settings = value
             self.login()
             self.get_map()
-            self.draw_trains()
         else:
             self._server_settings = []
 
@@ -210,7 +211,7 @@ class Application(Frame, object):
                     self._posts[item['point_idx']] = item
                     changed = True
             if changed:
-                self.redraw_map()
+                self.redraw_map() if hasattr(self.canvas_obj, 'point') else self.build_map()
         else:
             self._posts = {}
 
@@ -233,7 +234,7 @@ class Application(Frame, object):
                     self._trains[item['idx']] = item
                     changed = True
             if changed:
-                self.redraw_trains()
+                self.redraw_trains() if hasattr(self.canvas_obj, 'train') else self.draw_trains()
         else:
             self._trains = {}
 
@@ -273,6 +274,11 @@ class Application(Frame, object):
             self.draw_trains()
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
+    def _proportionally(self):
+        """Rebuilds map and redraws trains."""
+        self.build_map()
+        self.redraw_trains()
+
     def _capture_point(self, event):
         """Stores captured point and it's lines.
 
@@ -281,7 +287,7 @@ class Application(Frame, object):
         """
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         obj_ids = self.canvas.find_overlapping(x - 5, y - 5, x + 5, y + 5)
-        if not obj_ids or self.client.connection:
+        if not obj_ids:
             return
         for obj_id in obj_ids:
             if obj_id in self.canvas_obj.point.keys():
@@ -302,7 +308,7 @@ class Application(Frame, object):
         :param event: Tkinter.Event - Tkinter.Event instance for ButtonRelease event
         :return: None
         """
-        if self.captured_point and not self.client.connection:
+        if self.captured_point:
             idx = self.canvas_obj.point[self.captured_point]['idx']
             x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
             self.coordinates[idx] = (x, y)
@@ -317,12 +323,13 @@ class Application(Frame, object):
         :param event: Tkinter.Event - Tkinter.Event instance for Motion event
         :return: None
         """
-        if self.captured_point and not self.client.connection:
+        if self.captured_point:
             new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
             self.canvas.coords(self.captured_point, new_x, new_y)
             indent_y = self.icons[self.canvas_obj.point[self.captured_point]['icon']].height() / 2 + self.font_size
             if self.canvas_obj.point[self.captured_point]['text_obj'] is not None:
                 self.canvas.coords(self.canvas_obj.point[self.captured_point]['text_obj'], new_x, new_y - indent_y)
+            self.coordinates[self.canvas_obj.point[self.captured_point]['idx']] = (new_x, new_y)
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
             for key, value in self.captured_lines.items():
@@ -339,6 +346,8 @@ class Application(Frame, object):
                     r = self.font_size * len(str(line_attrs['weight']))
                     self.canvas.coords(line_attrs['weight_obj'][0], mid_x - r, mid_y - r, mid_x + r, mid_y + r)
 
+            self.redraw_trains()
+
     def file_open(self):
         """Opens file dialog and builds and draws a map once a file is chosen."""
         path = tkFileDialog.askopenfile(parent=self.master, **self.FILE_OPEN_OPTIONS)
@@ -347,7 +356,6 @@ class Application(Frame, object):
             if self.client.connection:
                 self.client.logout()
             self.weighted_check.configure(state=NORMAL)
-            self.idx, self.ratings, self.posts, self.trains = None, {}, {}, {}
             self.build_map()
 
     def open_server_settings(self):
@@ -476,26 +484,23 @@ class Application(Frame, object):
     def login(self):
         """Sends log in request and displays username and rating in status bar."""
         self.status_bar = 'Connecting...'
-        self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
         self.client.host, self.client.port = self.server_settings[:2]
         response = loads(self.client.login(name=self.server_settings[2], password=self.server_settings[3]).data)
         self.player_idx = response['idx']
         self.status_bar = '{}: {}'.format(response['name'], response['rating'])
-        self.weighted.set(1)
-        self.weighted_check.configure(state=DISABLED)
 
     @client_exceptions
     def logout(self):
-        """Sends log out request."""
+        """Sends log out request and resets internally used variables."""
         self.client.logout()
+        self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
 
     @client_exceptions
     def get_map(self):
         """Requests static and dynamic objects and builds map."""
         self.source = self.client.get_static_objects().data
-        self.refresh_map()
         self.build_map()
-        self.canvas.update()
+        self.refresh_map()
 
     @client_exceptions
     def refresh_map(self):
