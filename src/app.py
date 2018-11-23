@@ -505,13 +505,18 @@ class Application(Frame, object):
     @client_exceptions
     def refresh_map(self):
         """Requests dynamic objects and assigns new or changed values."""
-        self.client.turn()
         dynamic_objects = loads(self.client.get_dynamic_objects().data)
         self.idx = dynamic_objects['idx']
         self.ratings = dynamic_objects['ratings']
         self.posts = dynamic_objects['posts']
         self.trains = dynamic_objects['trains']
         self.canvas.update()
+
+    @client_exceptions
+    def tick(self):
+        """Sends client.turn request and refreshes map."""
+        self.client.turn()
+        self.refresh_map()
 
 
 class ServerSettings(tkSimpleDialog.Dialog, object):
