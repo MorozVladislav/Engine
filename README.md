@@ -12,7 +12,7 @@
 ### Клиент игровой великолепный II
 [Task 2](tasks/task_2.md)
 ### Мир огромный удивительный III
-[Задание 3](tasks/task_3.md)
+[Task 3](tasks/task_3.md)
 
 ## Dependencies
 The application requires Python2.7 and pip installed. All the rest dependencies are indicated in requirements.txt
