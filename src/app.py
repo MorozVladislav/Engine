@@ -15,6 +15,7 @@ from attrdict import AttrDict
 
 from client import Client, ClientException
 from graph import Graph
+from bot import Bot
 
 
 def prepare_coordinates(func):
@@ -134,6 +135,8 @@ class Application(Frame, object):
         self.show_weight_check.pack(side=LEFT)
 
         self.pack(fill=BOTH, expand=True)
+
+        self.bot = Bot(self)
 
         self.login()
 
@@ -364,13 +367,14 @@ class Application(Frame, object):
 
     def exit(self):
         """Closes application and sends logout request."""
+        self.bot.end_game()
         self.logout()
         self.master.destroy()
 
     @client_exceptions
     def play(self):
         """Calls bot for playing the game."""
-        pass
+        self.bot.start_game()
 
     def build_map(self):
         """Builds and draws new map."""
