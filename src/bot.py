@@ -1,138 +1,99 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
-"""The module implements bot of the game."""
+"""The module implements bot for playing the game."""
 
 
 class Bot(object):
-    """The application main class."""
+    """The bot main class."""
 
     def __init__(self, app):
-        """Initiates bot.
+        """Initiates bot and creates adjacency list.
 
-        :param app: instance - app.py
+        :param app: instance - Application instance
         """
         self.app = app
-        self.points = None
-        self.lines = None
-        self.posts = None
-        self.trains = None
-        self.client = None
-        self.game = None
+        self.started = None
+        self.adjacencies = {}
 
-    def start_game(self):
-        """Start bot."""
-        self.game = True
-        self.points = self.app.points
-        self.lines = self.app.lines
-        self.posts = self.app.posts
-        self.trains = self.app.trains
-        self.client = self.app.client
-        self.create_list_adjacency()
-        while self.game:
+    def start(self):
+        """Starts bot."""
+        self.started = True
+        while self.started:
             self.move_train(1, 19)
             self.move_train(1, 16)
             self.move_train(1, 13)
 
-    def end_game(self):
-        """Closes bot."""
-        self.game = False
+    def stop(self):
+        """Stops bot."""
+        self.started = False
 
-    def create_list_adjacency(self):
-        """Creates adjacency list of the graph."""
-        for point in self.points:
-            self.points[point]['neighbourhood'] = {}
+    def create_adjacency_list(self):
+        """Creates dict of adjacencies."""
+        for idx, attrs in self.app.lines.items():
+            start_point = attrs['start_point']
+            end_point = attrs['start_point']
+            if start_point not in self.adjacencies.keys():
+                self.adjacencies[start_point] = {}
+            if end_point not in self.adjacencies.keys():
+                self.adjacencies[end_point] = {}
+            self.adjacencies[start_point][end_point] = idx
+            self.adjacencies[end_point][start_point] = idx
 
-        for line in self.lines:
-            self.points[self.lines[line]['start_point']]['neighbourhood'][self.lines[line]['end_point']] = line
-            self.points[self.lines[line]['end_point']]['neighbourhood'][self.lines[line]['start_point']] = line
+    def dijkstra_algorithm(self, point):
+        """Finds the shortest paths from the point to all other points.
 
-    def dijkstra_algorithm(self, main_edge, list_adjacency):
-        """Finds the shortest paths from the main edge of the graph to all other vertices.
-
-        :param main_edge: int - main edge
-        :param list_adjacency: int - adjacency list of the graph
+        :param point: int - point index
         :return: dictionary of shortest paths
         """
-        edgeTo = {}
-        distTo = {}
-        visited = {}
-
-        for point in list_adjacency:
-            distTo[point] = float('inf') if point != main_edge else 0
-
-        while distTo:
-            min_edge = min(distTo, key=distTo.get)
-
-            for neighbour in list_adjacency[min_edge]['neighbourhood']:
-                if neighbour not in visited:
-
-                    new_dist = distTo[min_edge] + self.lines[list_adjacency[min_edge]['neighbourhood'][neighbour]][
-                        'weight']
-                    if new_dist < distTo[neighbour]:
-                        distTo[neighbour] = new_dist
-                        edgeTo[neighbour] = min_edge
-
-            visited[min_edge] = distTo[min_edge]
-            distTo.pop(min_edge)
-
-        return edgeTo
+        edge_to, dist_to, visited = {}, {}, {}
+        for point_idx in self.adjacencies.keys():
+            dist_to[point_idx] = float('inf') if point_idx != point else 0
+        while dist_to:
+            closest_point = min(dist_to, key=dist_to.get)
+            for point_idx, line_idx in self.adjacencies[closest_point].items():
+                if point_idx not in visited:
+                    new_dist = dist_to[closest_point] + self.app.lines[line_idx]['weight']
+                    if new_dist < dist_to[point_idx]:
+                        dist_to[point_idx] = new_dist
+                        edge_to[point_idx] = closest_point
+            visited[closest_point] = dist_to[closest_point]
+            dist_to.pop(closest_point)
+        return edge_to
 
     def move_train(self, idx, target_point):
-        """Move train from current point to target point.
+        """Moves train from current point to target point.
 
-        :param idx: int - idx train
-        :param target_point: int - target point of the movement
+        :param idx: int - train index
+        :param target_point: int - target point index
         :return: None
         """
         current_point = self.train_current_point(idx)
-        edgeTo = self.dijkstra_algorithm(current_point, self.points)
-
+        edge_to = self.dijkstra_algorithm(current_point)
         while target_point != current_point:
-
-            if edgeTo[target_point] != current_point:
-                temp_point = edgeTo[target_point]
-                while edgeTo[temp_point] != current_point:
-                    temp_point = edgeTo[temp_point]
+            if edge_to[target_point] != current_point:
+                temp_point = edge_to[target_point]
+                while edge_to[temp_point] != current_point:
+                    temp_point = edge_to[temp_point]
             else:
                 temp_point = target_point
-
-            temp_line = self.points[current_point]['neighbourhood'][temp_point]
-            way = self.lines[self.points[current_point]['neighbourhood'][temp_point]]['weight']
+            temp_line = self.app.points[current_point]['neighbours'][temp_point]
+            way = self.app.lines[self.app.points[current_point]['neighbours'][temp_point]]['weight']
             for _ in xrange(way):
-                self.client.move_train(temp_line, self.train_direction(temp_line, current_point), idx)
+                direction = 1 if current_point == self.app.lines[temp_line]['start_point'] else -1
+                self.app.client.move_train(temp_line, direction, idx)
                 self.app.tick()
-
-            self.refresh_dynamic_obj()
+            self.app.refresh_map()
             current_point = self.train_current_point(idx)
 
-    def refresh_dynamic_obj(self):
-        """Refresh dynamic objects."""
-        self.posts = self.app.posts
-        self.trains = self.app.trains
-
     def train_current_point(self, idx):
-        """Find current point of the train.
+        """Returns the current point of the train.
 
-        :param idx: int - idx train
-        :return: int - current point
+        :param idx: int - train index
+        :return: int - current point index
         """
-        current_line = self.trains[idx]['line_idx']
-        if self.trains[idx]['position'] == 0:
-            current_point = self.lines[current_line]['start_point']
+        current_line = self.app.trains[idx]['line_idx']
+        if self.app.trains[idx]['position'] == 0:
+            current_point = self.app.lines[current_line]['start_point']
         else:
-            current_point = self.lines[current_line]['end_point']
+            current_point = self.app.lines[current_line]['end_point']
         return current_point
-
-    def train_direction(self, current_line, current_point):
-        """Calculates direction.
-
-        :param current_line: int - current train line
-        :param current_point: int - current train point
-        :return: int - direction
-        """
-        if current_point == self.lines[current_line]['start_point']:
-            direction = 1
-        else:
-            direction = -1
-
-        return direction

@@ -13,9 +13,9 @@ from socket import error, herror, gaierror, timeout
 from PIL.ImageTk import PhotoImage
 from attrdict import AttrDict
 
+from bot import Bot
 from client import Client, ClientException
 from graph import Graph
-from bot import Bot
 
 
 def prepare_coordinates(func):
@@ -137,7 +137,6 @@ class Application(Frame, object):
         self.pack(fill=BOTH, expand=True)
 
         self.bot = Bot(self)
-
         self.login()
 
     @property
@@ -367,14 +366,13 @@ class Application(Frame, object):
 
     def exit(self):
         """Closes application and sends logout request."""
-        self.bot.end_game()
         self.logout()
         self.master.destroy()
 
     @client_exceptions
     def play(self):
         """Calls bot for playing the game."""
-        self.bot.start_game()
+        self.bot.start()
 
     def build_map(self):
         """Builds and draws new map."""
@@ -496,6 +494,7 @@ class Application(Frame, object):
     @client_exceptions
     def logout(self):
         """Sends log out request and resets internally used variables."""
+        self.bot.stop()
         self.client.logout()
         self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
 
