@@ -18,6 +18,7 @@ class Bot(object):
     def start(self):
         """Starts bot."""
         self.started = True
+        self.create_adjacency_list()
         while self.started:
             self.move_train(1, 19)
             self.move_train(1, 16)
@@ -31,7 +32,7 @@ class Bot(object):
         """Creates dict of adjacencies."""
         for idx, attrs in self.app.lines.items():
             start_point = attrs['start_point']
-            end_point = attrs['start_point']
+            end_point = attrs['end_point']
             if start_point not in self.adjacencies.keys():
                 self.adjacencies[start_point] = {}
             if end_point not in self.adjacencies.keys():
@@ -45,7 +46,7 @@ class Bot(object):
         :param point: int - point index
         :return: dictionary of shortest paths
         """
-        edge_to, dist_to, visited = {}, {}, {}
+        point_to, dist_to, visited = {}, {}, {}
         for point_idx in self.adjacencies.keys():
             dist_to[point_idx] = float('inf') if point_idx != point else 0
         while dist_to:
@@ -55,10 +56,10 @@ class Bot(object):
                     new_dist = dist_to[closest_point] + self.app.lines[line_idx]['weight']
                     if new_dist < dist_to[point_idx]:
                         dist_to[point_idx] = new_dist
-                        edge_to[point_idx] = closest_point
+                        point_to[point_idx] = closest_point
             visited[closest_point] = dist_to[closest_point]
             dist_to.pop(closest_point)
-        return edge_to
+        return point_to
 
     def move_train(self, idx, target_point):
         """Moves train from current point to target point.
@@ -68,21 +69,19 @@ class Bot(object):
         :return: None
         """
         current_point = self.train_current_point(idx)
-        edge_to = self.dijkstra_algorithm(current_point)
+        point_to = self.dijkstra_algorithm(current_point)
         while target_point != current_point:
-            if edge_to[target_point] != current_point:
-                temp_point = edge_to[target_point]
-                while edge_to[temp_point] != current_point:
-                    temp_point = edge_to[temp_point]
+            if point_to[target_point] != current_point:
+                temp_point = point_to[target_point]
+                while point_to[temp_point] != current_point:
+                    temp_point = point_to[temp_point]
             else:
                 temp_point = target_point
-            temp_line = self.app.points[current_point]['neighbours'][temp_point]
-            way = self.app.lines[self.app.points[current_point]['neighbours'][temp_point]]['weight']
-            for _ in xrange(way):
-                direction = 1 if current_point == self.app.lines[temp_line]['start_point'] else -1
-                self.app.client.move_train(temp_line, direction, idx)
+            temp_line = self.adjacencies[current_point][temp_point]
+            direction = 1 if current_point == self.app.lines[temp_line]['start_point'] else -1
+            self.app.client.move_train(temp_line, direction, idx)
+            while temp_point != self.train_current_point(idx):
                 self.app.tick()
-            self.app.refresh_map()
             current_point = self.train_current_point(idx)
 
     def train_current_point(self, idx):
@@ -92,7 +91,7 @@ class Bot(object):
         :return: int - current point index
         """
         current_line = self.app.trains[idx]['line_idx']
-        if self.app.trains[idx]['position'] == 0:
+        if self.app.trains[idx]['position'] < self.app.lines[current_line]['weight']:
             current_point = self.app.lines[current_line]['start_point']
         else:
             current_point = self.app.lines[current_line]['end_point']
