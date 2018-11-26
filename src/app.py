@@ -402,8 +402,9 @@ class Application(Frame, object):
     def redraw_trains(self):
         """Redraws existing trains."""
         if self.trains and hasattr(self.canvas_obj, 'train'):
-            for train in self.canvas_obj.train.keys():
-                self.canvas.delete(train)
+            for obj_id, attrs in self.canvas_obj.train.items():
+                self.canvas.delete(attrs['text_obj'])
+                self.canvas.delete(obj_id)
             self.draw_trains()
 
     @prepare_coordinates
@@ -413,17 +414,27 @@ class Application(Frame, object):
         for point in self.points.keys():
             x, y = self.coordinates[point]
             if self.posts and point in self.posts.keys():
-                icon_id = self.posts[point]['type']
-                text = self.posts[point]['name'].upper()
-                point_id = self.canvas.create_image(x, y, image=self.icons[icon_id])
-                y -= (self.icons[icon_id].height() / 2) + self.font_size
-                text_id = self.canvas.create_text(x, y, text=text, font="{} {}".format(self.FONT, self.font_size))
+                post_id = self.posts[point]['type']
+                if post_id == 1:
+                    status = '{}/{} {}/{} {}/{}'.format(self.posts[point]['population'],
+                                                        self.posts[point]['population_capacity'],
+                                                        self.posts[point]['product'],
+                                                        self.posts[point]['product_capacity'],
+                                                        self.posts[point]['armor'],
+                                                        self.posts[point]['armor_capacity'])
+                elif post_id == 2:
+                    status = '{}/{}'.format(self.posts[point]['product'], self.posts[point]['product_capacity'])
+                else:
+                    status = '{}/{}'.format(self.posts[point]['armor'], self.posts[point]['armor_capacity'])
+                point_id = self.canvas.create_image(x, y, image=self.icons[post_id])
+                y -= (self.icons[post_id].height() / 2) + self.font_size
+                text_id = self.canvas.create_text(x, y, text=status, font="{} {}".format(self.FONT, self.font_size))
                 self.canvas.tag_raise(text_id)
             else:
-                icon_id = 5
-                point_id = self.canvas.create_image(x, y, image=self.icons[icon_id])
+                post_id = 5
+                point_id = self.canvas.create_image(x, y, image=self.icons[post_id])
                 text_id = None
-            point_objs[point_id] = {'idx': point, 'text_obj': text_id, 'icon': icon_id}
+            point_objs[point_id] = {'idx': point, 'text_obj': text_id, 'icon': post_id}
         self.canvas_obj['point'] = point_objs
 
     @prepare_coordinates
@@ -453,8 +464,12 @@ class Application(Frame, object):
             x_end, y_end = self.coordinates[end_point]
             delta_x, delta_y = int((x_start - x_end) / weight) * position, int((y_start - y_end) / weight) * position
             indent_y = self.icons[4].height() / 2
-            train_id = self.canvas.create_image(x_start - delta_x, y_start - delta_y - indent_y, image=self.icons[4])
-            trains[train_id] = {'icon': 4}
+            x, y = x_start - delta_x, y_start - delta_y
+            train_id = self.canvas.create_image(x, y - indent_y, image=self.icons[4])
+            status = '{}/{}'.format(train['goods'], train['goods_capacity'])
+            text_id = self.canvas.create_text(x, y - (2 * indent_y + self.font_size), text=status,
+                                              font="{} {}".format(self.FONT, self.font_size))
+            trains[train_id] = {'icon': 4, 'text_obj': text_id}
         self.canvas_obj['train'] = trains
 
     def show_weights(self):

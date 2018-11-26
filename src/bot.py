@@ -29,7 +29,8 @@ class Bot(object):
         self.started = False
 
     def create_adjacency_list(self):
-        """Creates dict of adjacencies."""
+        """Creates new dict of adjacencies."""
+        self.adjacencies = {}
         for idx, attrs in self.app.lines.items():
             start_point = attrs['start_point']
             end_point = attrs['end_point']
