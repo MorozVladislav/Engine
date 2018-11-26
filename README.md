@@ -27,3 +27,9 @@ pip install --upgrade pip
 pip install -r requirements.txt
 python2.7 -m app
 ```
+## How to use it
+1. For moving any vertex of Graph just "capture it" with left button mouse
+2. For zoom_in and zoom_out press "Ctrl+Left_mouse_Button" and point out the zone of zoom
+3. For zoom_out press "Escape"
+4. For connecting to Server open "Server Settings" and enter you credentials
+
