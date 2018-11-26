@@ -366,6 +366,7 @@ class Application(Frame, object):
 
     def exit(self):
         """Closes application and sends logout request."""
+        self.bot.stop()
         self.logout()
         self.master.destroy()
 
