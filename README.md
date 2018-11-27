@@ -27,3 +27,7 @@ pip install -r requirements.txt
 cd src
 python2.7 -m main.py
 ```
+
+## How to use Engine Application
+1. For moving any vertex of Graph just "capture it" with left button mouse
+2. For connecting to Server open "Server Settings" and enter you credentials
