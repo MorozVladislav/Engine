@@ -412,36 +412,41 @@ class Application(Frame, object):
     def draw_points(self):
         """Draws map points by prepared coordinates."""
         point_objs = {}
-        for point in self.points.keys():
-            x, y = self.coordinates[point]
-            if self.posts and point in self.posts.keys():
-                post_id = self.posts[point]['type']
-                if post_id == 1:
-                    status = '{}/{} {}/{} {}/{}'.format(self.posts[point]['population'],
-                                                        self.posts[point]['population_capacity'],
-                                                        self.posts[point]['product'],
-                                                        self.posts[point]['product_capacity'],
-                                                        self.posts[point]['armor'],
-                                                        self.posts[point]['armor_capacity'])
-                elif post_id == 2:
-                    status = '{}/{}'.format(self.posts[point]['product'], self.posts[point]['product_capacity'])
+        captured_point_idx = self.canvas_obj.point[self.captured_point]['idx'] if self.captured_point else None
+        for idx in self.points.keys():
+            x, y = self.coordinates[idx]
+            if self.posts and idx in self.posts.keys():
+                post_type = self.posts[idx]['type']
+                if post_type == 1:
+                    status = '{}/{} {}/{} {}/{}'.format(self.posts[idx]['population'],
+                                                        self.posts[idx]['population_capacity'],
+                                                        self.posts[idx]['product'],
+                                                        self.posts[idx]['product_capacity'],
+                                                        self.posts[idx]['armor'],
+                                                        self.posts[idx]['armor_capacity'])
+                elif post_type == 2:
+                    status = '{}/{}'.format(self.posts[idx]['product'], self.posts[idx]['product_capacity'])
                 else:
-                    status = '{}/{}'.format(self.posts[point]['armor'], self.posts[point]['armor_capacity'])
-                point_id = self.canvas.create_image(x, y, image=self.icons[post_id])
-                y -= (self.icons[post_id].height() / 2) + self.font_size
+                    status = '{}/{}'.format(self.posts[idx]['armor'], self.posts[idx]['armor_capacity'])
+                point_id = self.canvas.create_image(x, y, image=self.icons[post_type])
+                y -= (self.icons[post_type].height() / 2) + self.font_size
                 text_id = self.canvas.create_text(x, y, text=status, font="{} {}".format(self.FONT, self.font_size))
                 self.canvas.tag_raise(text_id)
             else:
-                post_id = 5
-                point_id = self.canvas.create_image(x, y, image=self.icons[post_id])
+                post_type = 5
+                point_id = self.canvas.create_image(x, y, image=self.icons[post_type])
                 text_id = None
-            point_objs[point_id] = {'idx': point, 'text_obj': text_id, 'icon': post_id}
+            point_objs[point_id] = {'idx': idx, 'text_obj': text_id, 'icon': post_type}
+            self.captured_point = point_id if idx == captured_point_idx else self.captured_point
         self.canvas_obj['point'] = point_objs
 
     @prepare_coordinates
     def draw_lines(self):
         """Draws map lines by prepared coordinates and shows their weights if self.show_weight is set to 1."""
-        line_objs = {}
+        line_objs, captured_lines_idx = {}, {}
+        if self.captured_lines:
+            for line_id in self.captured_lines.keys():
+                captured_lines_idx[self.canvas_obj.line[line_id]['idx']] = line_id
         for idx, attrs in self.lines.items():
             x_start, y_start = self.coordinates[attrs['start_point']]
             x_stop, y_stop = self.coordinates[attrs['end_point']]
@@ -449,6 +454,8 @@ class Application(Frame, object):
             self.canvas.tag_lower(line_id)
             line_objs[line_id] = {'idx': idx, 'weight': attrs['weight'], 'start_point': attrs['start_point'],
                                   'end_point': attrs['end_point'], 'weight_obj': ()}
+            if idx in captured_lines_idx.keys():
+                self.captured_lines[line_id] = self.captured_lines.pop(captured_lines_idx[idx])
         self.canvas_obj['line'] = line_objs
         self.show_weights()
 
