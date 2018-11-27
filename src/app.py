@@ -294,13 +294,13 @@ class Application(Frame, object):
         for obj_id in obj_ids:
             if obj_id in self.canvas_obj.point.keys():
                 self.captured_point = obj_id
-                point = self.canvas_obj.point[obj_id]['idx']
+                point_idx = self.canvas_obj.point[obj_id]['idx']
                 self.captured_lines = {}
-                for key, value in self.canvas_obj.line.items():
-                    if value['start_point'] == point:
-                        self.captured_lines[key] = 'start_point'
-                    if value['end_point'] == point:
-                        self.captured_lines[key] = 'end_point'
+                for line_id, attr in self.canvas_obj.line.items():
+                    if attr['start_point'] == point_idx:
+                        self.captured_lines[line_id] = 'start_point'
+                    if attr['end_point'] == point_idx:
+                        self.captured_lines[line_id] = 'end_point'
         if self.weighted.get():
             self.weighted.set(0)
 
@@ -334,14 +334,14 @@ class Application(Frame, object):
             self.coordinates[self.canvas_obj.point[self.captured_point]['idx']] = (new_x, new_y)
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
-            for key, value in self.captured_lines.items():
-                line_attrs = self.canvas_obj.line[key]
-                if value == 'start_point':
+            for line_id, attr in self.captured_lines.items():
+                line_attrs = self.canvas_obj.line[line_id]
+                if attr == 'start_point':
                     x, y = self.coordinates[line_attrs['end_point']]
-                    self.canvas.coords(key, new_x, new_y, x, y)
+                    self.canvas.coords(line_id, new_x, new_y, x, y)
                 else:
                     x, y = self.coordinates[line_attrs['start_point']]
-                    self.canvas.coords(key, x, y, new_x, new_y)
+                    self.canvas.coords(line_id, x, y, new_x, new_y)
                 if self.show_weight.get():
                     mid_x, mid_y = self.midpoint(new_x, new_y, x, y)
                     self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
