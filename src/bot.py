@@ -12,7 +12,7 @@ class Bot(object):
         :param app: instance - Application instance
         """
         self.app = app
-        self.started = None
+        self.started = False
         self.adjacencies = {}
 
     def start(self):

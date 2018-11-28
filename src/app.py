@@ -139,6 +139,7 @@ class Application(Frame, object):
 
         self.bot = Bot(self)
         self.login()
+        self.get_map()
 
     @property
     def status_bar(self):
