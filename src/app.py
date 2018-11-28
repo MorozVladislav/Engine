@@ -85,7 +85,8 @@ class Application(Frame, object):
         self.settings_window = None
         self.client = Client()
         self._server_settings = [self.client.host, self.client.port, self.client.username, self.client.password]
-        self.player_idx, self.idx, self._ratings, self._posts, self._trains = None, None, {}, {}, {}
+        self.idx, self._ratings, self._posts, self._trains = None, {}, {}, {}
+        self.player_idx, self.player_town = None, None
         self.icons = {
             0: PhotoImage(file=join('icons', 'user_city.png')),
             1: PhotoImage(file=join('icons', 'city.png')),
@@ -430,7 +431,7 @@ class Application(Frame, object):
                     status = '{}/{}'.format(self.posts[idx]['product'], self.posts[idx]['product_capacity'])
                 else:
                     status = '{}/{}'.format(self.posts[idx]['armor'], self.posts[idx]['armor_capacity'])
-                image_id = 0 if post_type == 1 and self.posts[idx]['player_idx'] == self.player_idx else post_type
+                image_id = 0 if post_type == 1 and idx == self.player_town['point_idx'] else post_type
                 point_id = self.canvas.create_image(x, y, image=self.icons[image_id])
                 y -= (self.icons[post_type].height() / 2) + self.font_size
                 text_id = self.canvas.create_text(x, y, text=status, font="{} {}".format(self.FONT, self.font_size))
@@ -515,6 +516,7 @@ class Application(Frame, object):
         self.client.host, self.client.port = self.server_settings[:2]
         response = loads(self.client.login(name=self.server_settings[2], password=self.server_settings[3]).data)
         self.player_idx = response['idx']
+        self.player_town = response['town']
         self.status_bar = '{}: {}'.format(response['name'], response['rating'])
 
     @client_exceptions
@@ -522,7 +524,8 @@ class Application(Frame, object):
         """Sends log out request and resets internally used variables."""
         self.bot.stop()
         self.client.logout()
-        self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
+        self.idx, self.ratings, self.posts, self.trains = None, {}, {}, {}
+        self.player_idx, self.player_town = None, None
 
     @client_exceptions
     def get_map(self):
