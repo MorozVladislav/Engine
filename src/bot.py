@@ -28,6 +28,11 @@ class Bot(object):
         """Stops bot."""
         self.started = False
 
+    def refresh_map(self):
+        """Sends turn request and enqueues refresh map request."""
+        self.app.client.turn()
+        self.app.bot_queue.put(self.app.client.get_dynamic_objects().data)
+
     def create_adjacency_list(self):
         """Creates new dict of adjacencies."""
         self.adjacencies = {}
@@ -82,7 +87,7 @@ class Bot(object):
             direction = 1 if current_point == self.app.lines[temp_line]['start_point'] else -1
             self.app.client.move_train(temp_line, direction, idx)
             while temp_point != self.train_current_point(idx):
-                self.app.tick()
+                self.refresh_map()
             current_point = self.train_current_point(idx)
 
     def train_current_point(self, idx):

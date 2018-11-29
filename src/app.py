@@ -3,12 +3,14 @@
 """The module implements GUI of the game."""
 import tkFileDialog
 import tkSimpleDialog
+from Queue import Queue
 from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, X, Y
 from functools import wraps
 from json import loads
 from os.path import join
 from socket import error, herror, gaierror, timeout
+from threading import Thread
 
 from PIL.ImageTk import PhotoImage
 from attrdict import AttrDict
@@ -76,6 +78,7 @@ class Application(Frame, object):
         super(Application, self).__init__(master)
         self.master.title('Engine Game')
         self.master.geometry('{}x{}'.format(self.WIDTH, self.HEIGHT))
+        self.master.protocol('WM_DELETE_WINDOW', self.exit)
 
         self.source, self._map, self.points, self.lines, self.captured_point = None, None, None, None, None
         self.x0, self.y0, self.scale_x, self.scale_y, self.font_size = None, None, None, None, None
@@ -86,6 +89,9 @@ class Application(Frame, object):
         self.client = Client()
         self._server_settings = [self.client.host, self.client.port, self.client.username, self.client.password]
         self.player_idx, self.idx, self._ratings, self._posts, self._trains = None, None, {}, {}, {}
+        self.bot = Bot(self)
+        self.bot_thread = None
+        self.bot_queue = Queue()
         self.icons = {
             0: PhotoImage(file=join('icons', 'user_city.png')),
             1: PhotoImage(file=join('icons', 'city.png')),
@@ -101,7 +107,7 @@ class Application(Frame, object):
         filemenu.add_command(label='Server settings', command=self.open_server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
         self.menu.add_cascade(label='File', menu=filemenu)
-        self.menu.add_command(label='Play', command=self.play)
+        self.menu.add_command(label='Play', command=self.bot_control)
         master.config(menu=self.menu)
 
         self._status_bar = StringVar()
@@ -137,7 +143,6 @@ class Application(Frame, object):
 
         self.pack(fill=BOTH, expand=True)
 
-        self.bot = Bot(self)
         self.login()
         self.get_map()
 
@@ -367,15 +372,24 @@ class Application(Frame, object):
         ServerSettings(self, title='Server settings')
 
     def exit(self):
-        """Closes application and sends logout request."""
-        self.bot.stop()
-        self.logout()
+        """Closes application, stops bot if it works and sends logout request if connection is created."""
+        if self.bot.started:
+            self.bot_control()
         self.master.destroy()
+        if self.client.connection:
+            self.logout()
 
-    @client_exceptions
-    def play(self):
-        """Calls bot for playing the game."""
-        self.bot.start()
+    def bot_control(self):
+        """Starts bot for playing the game. Stops bot if it was started previously."""
+        if not self.bot.started and self.client.connection:
+            self.bot_thread = Thread(target=self.bot.start)
+            self.bot_thread.daemon = True
+            self.refresh_requests()
+            self.bot_thread.start()
+            self.menu.entryconfigure(5, label='Stop')
+        else:
+            self.bot.stop()
+            self.menu.entryconfigure(5, label='Play')
 
     def build_map(self):
         """Builds and draws new map."""
@@ -532,20 +546,21 @@ class Application(Frame, object):
         self.refresh_map()
 
     @client_exceptions
-    def refresh_map(self):
-        """Requests dynamic objects and assigns new or changed values."""
-        dynamic_objects = loads(self.client.get_dynamic_objects().data)
+    def refresh_map(self, dynamic_objects=None):
+        """Requests dynamic objects if they were not passed and assigns new or changed values."""
+        dynamic_objects = self.client.get_dynamic_objects().data if dynamic_objects is None else dynamic_objects
+        dynamic_objects = loads(dynamic_objects)
         self.idx = dynamic_objects['idx']
         self.ratings = dynamic_objects['ratings']
         self.posts = dynamic_objects['posts']
         self.trains = dynamic_objects['trains']
         self.canvas.update()
 
-    @client_exceptions
-    def tick(self):
-        """Sends client.turn request and refreshes map."""
-        self.client.turn()
-        self.refresh_map()
+    def refresh_requests(self):
+        """Dequeues and executes refresh map requests."""
+        if not self.bot_queue.empty():
+            self.refresh_map(self.bot_queue.get())
+        self.after(50, self.refresh_requests)
 
 
 class ServerSettings(tkSimpleDialog.Dialog, object):

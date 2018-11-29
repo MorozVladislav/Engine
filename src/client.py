@@ -138,9 +138,7 @@ class Client(object):
         :return: Response instance
         """
         self.send(2)
-        response = self.receive()
         self.connection.close()
-        return response
 
     def move_train(self, line_idx, speed, train_idx):
         """Sends MOVE request and receives response.
