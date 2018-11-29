@@ -208,19 +208,16 @@ class Application(Frame, object):
 
     @posts.setter
     def posts(self, value):
-        """Redraws map each time a non-empty dict of posts is assigned and at least 1 post is added or changed.
+        """Redraws map each time a non-empty dict of posts is assigned.
 
         :param value: list - list of posts
         :return: None
         """
-        changed = False
         if value:
             for item in value:
                 if item['point_idx'] not in self._posts.keys() or self._posts[item['point_idx']] != item:
                     self._posts[item['point_idx']] = item
-                    changed = True
-            if changed:
-                self.redraw_map() if hasattr(self.canvas_obj, 'point') else self.build_map()
+            self.redraw_map() if hasattr(self.canvas_obj, 'point') else self.build_map()
         else:
             self._posts = {}
 
@@ -231,19 +228,16 @@ class Application(Frame, object):
 
     @trains.setter
     def trains(self, value):
-        """Redraws trains each time a non-empty dict of trains is assigned and at least 1 train is added or changed.
+        """Redraws trains each time a non-empty dict of trains is assigned.
 
         :param value: list - list of trains
         :return: None
         """
-        changed = False
         if value:
             for item in value:
                 if item['idx'] not in self._trains.keys() or self._trains[item['idx']] != item:
                     self._trains[item['idx']] = item
-                    changed = True
-            if changed:
-                self.redraw_trains() if hasattr(self.canvas_obj, 'train') else self.draw_trains()
+            self.redraw_trains() if hasattr(self.canvas_obj, 'train') else self.draw_trains()
         else:
             self._trains = {}
 
@@ -413,7 +407,12 @@ class Application(Frame, object):
     def redraw_map(self):
         """Redraws existing map by existing coordinates."""
         if self.map:
-            self.canvas.delete('all')
+            for obj_id in self.canvas_obj.line:
+                self.canvas.delete(obj_id)
+            for obj_id, attrs in self.canvas_obj.point.items():
+                if attrs['text_obj'] is not None:
+                    self.canvas.delete(attrs['text_obj'])
+                self.canvas.delete(obj_id)
             self.draw_map()
 
     def redraw_trains(self):
@@ -448,7 +447,6 @@ class Application(Frame, object):
                 point_id = self.canvas.create_image(x, y, image=self.icons[image_id])
                 y -= (self.icons[post_type].height() / 2) + self.font_size
                 text_id = self.canvas.create_text(x, y, text=status, font="{} {}".format(self.FONT, self.font_size))
-                self.canvas.tag_raise(text_id)
             else:
                 post_type = 5
                 point_id = self.canvas.create_image(x, y, image=self.icons[post_type])
@@ -560,7 +558,7 @@ class Application(Frame, object):
         """Dequeues and executes refresh map requests."""
         if not self.bot_queue.empty():
             self.refresh_map(self.bot_queue.get())
-        self.after(50, self.refresh_requests)
+        self.after(10, self.refresh_requests)
 
 
 class ServerSettings(tkSimpleDialog.Dialog, object):
