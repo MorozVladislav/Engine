@@ -4,10 +4,7 @@
 import socket
 from functools import wraps
 from json import dumps, loads
-from os.path import expanduser, exists
 from struct import pack, unpack
-
-from lya import AttrDict
 
 
 def connection(func):
@@ -51,24 +48,17 @@ class Response(object):
 
 class Client(object):
     """Game server client main class."""
-    DEFAULTS = 'default_settings.yaml'
 
-    def __init__(self, host=None, port=None, timeout=None):
-        """Initiates client. If whether host or port is None assigns default value from default_settings.yaml.
+    def __init__(self, host=None, port=None, timeout=None, username=None, password=None):
+        """Initiates client.
 
         :param host: str - server hostname or IP address
         :param port: int - port
+        :param timeout: int - socket timeout
+        :param username: string - username
+        :param password: string - password
         """
-        if exists(expanduser(self.DEFAULTS)):
-            with open(expanduser(self.DEFAULTS), 'r') as cfg:
-                defaults = AttrDict.from_yaml(cfg)
-            self.host = host if host is not None else str(defaults.host)
-            self.port = port if port is not None else int(defaults.port)
-            self.timeout = timeout if timeout is not None else int(defaults.timeout)
-            self.username = None if defaults.username is None else str(defaults.username)
-            self.password = None if defaults.password is None else str(defaults.password)
-        else:
-            self.host, self.port, self.username, self.password = None, None, None, None
+        self.host, self.port, self.timeout, self.username, self.password = host, port, timeout, username, password
         self.connection = None
 
     @connection
