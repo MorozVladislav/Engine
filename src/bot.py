@@ -167,7 +167,6 @@ class Bot(object):
             self.client.move_train(temp_line, direction, idx)
             while temp_point != self.get_current_point(idx):
                 self.tick()
-                self.refresh_map()
             current_point = self.get_current_point(idx)
 
     def get_current_point(self, idx):
