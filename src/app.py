@@ -3,7 +3,6 @@
 """The module implements GUI of the game."""
 import tkFileDialog
 import tkSimpleDialog
-from Queue import Queue
 from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, X, Y
 from functools import wraps
@@ -95,9 +94,12 @@ class Application(Frame, object):
             self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
 
         self.posts, self.trains = {}, {}
-        self.bot = Bot(self)
+        self.bot = Bot(host=self.host,
+                       port=self.port,
+                       time_out=self.timeout,
+                       username=self.username,
+                       password=self.password)
         self.bot_thread = None
-        self.bot_queue = Queue()
 
         self.menu = Menu(self)
         filemenu = Menu(self.menu)
@@ -288,7 +290,6 @@ class Application(Frame, object):
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
         if not self.bot.started:
-            self.bot_queue = Queue()
             self.bot_thread = Thread(target=self.bot.start)
             self.requests_executor()
             self.bot_thread.start()
@@ -297,7 +298,6 @@ class Application(Frame, object):
         else:
             self.bot.stop()
             self.bot_thread.join()
-            self.bot_queue = None
             self.posts, self.trains = {}, {}
             if not self.bot.started:
                 self.menu.entryconfigure(5, label='Play')
@@ -459,8 +459,8 @@ class Application(Frame, object):
 
     def requests_executor(self):
         """Dequeues and executes requests."""
-        if self.bot_queue and not self.bot_queue.empty():
-            request_type, request_body = self.bot_queue.get()
+        if self.bot_thread.is_alive() and not self.bot.queue.empty():
+            request_type, request_body = self.bot.queue.get()
             self.queue_requests[request_type](request_body)
         self.after(1, self.requests_executor)
 

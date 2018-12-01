@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """The module implements bot for playing the game."""
+from Queue import Queue
 from functools import wraps
 from json import loads
 from socket import error, herror, gaierror, timeout
@@ -32,16 +33,21 @@ def client_exceptions(func):
 class Bot(object):
     """The bot main class."""
 
-    def __init__(self, app):
+    def __init__(self, host=None, port=None, time_out=None, username=None, password=None):
         """Initiates bot.
 
-        :param app: instance - Application instance
+        :param host: string - host
+        :param port: int - port
+        :param time_out: int - timeout
+        :param username: string - username
+        :param password: string - password
         """
-        self.app = app
+        self.host, self.port, self.timeout, self.username, self.password = host, port, time_out, username, password
         self.client = None
+        self.queue = Queue()
         self.started = False
+        self.lines, self.points, self.adjacencies = {}, {}, {}
         self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
-        self.adjacencies = {}
 
     def refresh_status_bar(self, value):
         """Enqueues application status bar refresh request.
@@ -49,12 +55,18 @@ class Bot(object):
         :param value: string - status string
         :return: None
         """
-        self.app.bot_queue.put((0, value))
+        self.queue.put((0, value))
 
     @client_exceptions
     def build_map(self):
         """Requests static objects and enqueues draw map request."""
-        self.app.bot_queue.put((1, self.client.get_static_objects().data))
+        static_objects = self.client.get_static_objects().data
+        self.queue.put((1, static_objects))
+        static_objects = loads(static_objects)
+        for point in static_objects['points']:
+            self.points[point['idx']] = point
+        for line in static_objects['lines']:
+            self.lines[line['idx']] = line
 
     @client_exceptions
     def refresh_map(self):
@@ -68,17 +80,17 @@ class Bot(object):
             self.trains[train['idx']] = train
         rating = '{}: {}'.format(self.ratings[self.player_idx]['name'], self.ratings[self.player_idx]['rating'])
         self.refresh_status_bar(rating)
-        self.app.bot_queue.put((2, dynamic_objects))
+        self.queue.put((2, dynamic_objects))
 
     @client_exceptions
     def login(self):
         """Creates Client, sends log in request and displays username and rating in status bar."""
         self.refresh_status_bar('Connecting...')
-        self.client = Client(host=self.app.host,
-                             port=self.app.port,
-                             timeout=self.app.timeout,
-                             username=self.app.username,
-                             password=self.app.password)
+        self.client = Client(host=self.host,
+                             port=self.port,
+                             timeout=self.timeout,
+                             username=self.username,
+                             password=self.password)
         response = loads(self.client.login().data)
         self.player_idx = response['idx']
         self.refresh_status_bar('{}: {}'.format(response['name'], response['rating']))
@@ -115,9 +127,8 @@ class Bot(object):
     def create_adjacency_list(self):
         """Creates new dict of adjacencies."""
         self.adjacencies = {}
-        for idx, attrs in self.app.lines.items():
-            start_point = attrs['start_point']
-            end_point = attrs['end_point']
+        for idx, attrs in self.lines.items():
+            start_point, end_point = attrs['points'][0], attrs['points'][1]
             if start_point not in self.adjacencies.keys():
                 self.adjacencies[start_point] = {}
             if end_point not in self.adjacencies.keys():
@@ -138,7 +149,7 @@ class Bot(object):
             closest_point = min(dist_to, key=dist_to.get)
             for point_idx, line_idx in self.adjacencies[closest_point].items():
                 if point_idx not in visited:
-                    new_dist = dist_to[closest_point] + self.app.lines[line_idx]['weight']
+                    new_dist = dist_to[closest_point] + self.lines[line_idx]['length']
                     if new_dist < dist_to[point_idx]:
                         dist_to[point_idx] = new_dist
                         point_to[point_idx] = closest_point
@@ -163,7 +174,7 @@ class Bot(object):
             else:
                 temp_point = target_point
             temp_line = self.adjacencies[current_point][temp_point]
-            direction = 1 if current_point == self.app.lines[temp_line]['start_point'] else -1
+            direction = 1 if current_point == self.lines[temp_line]['points'][0] else -1
             self.client.move_train(temp_line, direction, idx)
             while temp_point != self.get_current_point(idx):
                 self.tick()
@@ -176,8 +187,8 @@ class Bot(object):
         :return: int - current point index
         """
         current_line = self.trains[idx]['line_idx']
-        if self.trains[idx]['position'] < self.app.lines[current_line]['weight']:
-            current_point = self.app.lines[current_line]['start_point']
+        if self.trains[idx]['position'] < self.lines[current_line]['length']:
+            current_point = self.lines[current_line]['points'][0]
         else:
-            current_point = self.app.lines[current_line]['end_point']
+            current_point = self.lines[current_line]['points'][1]
         return current_point
