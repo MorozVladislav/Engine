@@ -1,28 +1,112 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """The module implements bot for playing the game."""
+from functools import wraps
+from json import loads
+from socket import error, herror, gaierror, timeout
+
+from client import Client, ClientException
+
+
+def client_exceptions(func):
+    """Catches exceptions that can be thrown by Client and displays them in status bar.
+
+    :param func: function - function that uses Client methods
+    :return: wrapped function
+    """
+    @wraps(func)
+    def wrapped(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        except (ClientException, error, herror, gaierror, timeout) as exc:
+            if isinstance(exc, ClientException) or isinstance(exc, timeout):
+                message = exc.message
+            else:
+                message = exc.strerror
+            self.refresh_status_bar('Error: {}'.format(message))
+            raise exc
+
+    return wrapped
 
 
 class Bot(object):
     """The bot main class."""
 
     def __init__(self, app):
-        """Initiates bot and creates adjacency list.
+        """Initiates bot.
 
         :param app: instance - Application instance
         """
         self.app = app
+        self.client = None
         self.started = False
+        self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
         self.adjacencies = {}
 
+    def refresh_status_bar(self, value):
+        """Enqueues application status bar refresh request.
+
+        :param value: string - status string
+        :return: None
+        """
+        self.app.bot_queue.put((0, value))
+
+    @client_exceptions
+    def build_map(self):
+        """Requests static objects and enqueues draw map request."""
+        self.app.bot_queue.put((1, self.client.get_static_objects().data))
+
+    @client_exceptions
+    def refresh_map(self):
+        """Requests dynamic objects and enqueues refresh map request."""
+        dynamic_objects = loads(self.client.get_dynamic_objects().data)
+        self.idx = dynamic_objects['idx']
+        self.ratings = dynamic_objects['ratings']
+        for post in dynamic_objects['posts']:
+            self.posts[post['point_idx']] = post
+        for train in dynamic_objects['trains']:
+            self.trains[train['idx']] = train
+        rating = '{}: {}'.format(self.ratings[self.player_idx]['name'], self.ratings[self.player_idx]['rating'])
+        self.refresh_status_bar(rating)
+        self.app.bot_queue.put((2, dynamic_objects))
+
+    @client_exceptions
+    def login(self):
+        """Creates Client, sends log in request and displays username and rating in status bar."""
+        self.refresh_status_bar('Connecting...')
+        self.client = Client(host=self.app.host,
+                             port=self.app.port,
+                             timeout=self.app.timeout,
+                             username=self.app.username,
+                             password=self.app.password)
+        response = loads(self.client.login().data)
+        self.player_idx = response['idx']
+        self.refresh_status_bar('{}: {}'.format(response['name'], response['rating']))
+
+    @client_exceptions
+    def logout(self):
+        """Sends log out request and resets internally used variables."""
+        self.client.logout()
+        self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
+
+    @client_exceptions
+    def tick(self):
+        """Sends turn request and refreshes map."""
+        self.client.turn()
+        self.refresh_map()
+
     def start(self):
-        """Starts bot."""
-        self.started = True
+        """Logs in and starts bot."""
+        self.login()
+        self.build_map()
+        self.refresh_map()
         self.create_adjacency_list()
+        self.started = True
         while self.started:
             self.move_train(1, 19)
             self.move_train(1, 16)
             self.move_train(1, 13)
+        self.logout()
 
     def stop(self):
         """Stops bot."""
@@ -80,11 +164,11 @@ class Bot(object):
                 temp_point = target_point
             temp_line = self.adjacencies[current_point][temp_point]
             direction = 1 if current_point == self.app.lines[temp_line]['start_point'] else -1
-            self.app.client.move_train(temp_line, direction, idx)
-            while temp_point != self.get_current_point(idx):
-                self.app.tick()
-                print self.app.posts
-            current_point = self.get_current_point(idx)
+            self.client.move_train(temp_line, direction, idx)
+            while temp_point != self.train_current_point(idx):
+                self.tick()
+                self.refresh_map()
+            current_point = self.train_current_point(idx)
 
     def get_current_point(self, idx):
         """Returns current point of a train.
@@ -92,8 +176,8 @@ class Bot(object):
         :param idx: int - train index
         :return: int - current point index
         """
-        current_line = self.app.trains[idx]['line_idx']
-        if self.app.trains[idx]['position'] < self.app.lines[current_line]['weight']:
+        current_line = self.trains[idx]['line_idx']
+        if self.trains[idx]['position'] < self.app.lines[current_line]['weight']:
             current_point = self.app.lines[current_line]['start_point']
         else:
             current_point = self.app.lines[current_line]['end_point']
