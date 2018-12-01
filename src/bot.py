@@ -153,7 +153,7 @@ class Bot(object):
         :param target_point: int - target point index
         :return: None
         """
-        current_point = self.train_current_point(idx)
+        current_point = self.get_current_point(idx)
         point_to = self.dijkstra_algorithm(current_point)
         while target_point != current_point:
             if point_to[target_point] != current_point:
@@ -165,12 +165,12 @@ class Bot(object):
             temp_line = self.adjacencies[current_point][temp_point]
             direction = 1 if current_point == self.app.lines[temp_line]['start_point'] else -1
             self.client.move_train(temp_line, direction, idx)
-            while temp_point != self.train_current_point(idx):
+            while temp_point != self.get_current_point(idx):
                 self.tick()
                 self.refresh_map()
-            current_point = self.train_current_point(idx)
+            current_point = self.get_current_point(idx)
 
-    def train_current_point(self, idx):
+    def get_current_point(self, idx):
         """Returns the current point of the train.
 
         :param idx: int - train index

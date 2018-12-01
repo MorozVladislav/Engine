@@ -140,7 +140,7 @@ class Application(Frame, object):
         self.show_weight_check.pack(side=LEFT)
 
         self.pack(fill=BOTH, expand=True)
-        self.set_status_bar('Ready')
+        self.set_status_bar('Click Play to start the game')
 
     @property
     def map(self):
