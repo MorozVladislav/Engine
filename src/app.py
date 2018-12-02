@@ -6,14 +6,15 @@ import tkSimpleDialog
 from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, X, Y
 from functools import wraps
-from json import loads
+from os.path import expanduser, exists
 from os.path import join
-from socket import error, herror, gaierror, timeout
+from threading import Thread
 
 from PIL.ImageTk import PhotoImage
 from attrdict import AttrDict
+from lya import AttrDict as DefaultsDict
 
-from client import Client, ClientException
+from bot import Bot
 from graph import Graph
 
 
@@ -39,22 +40,6 @@ def prepare_coordinates(func):
     return wrapped
 
 
-def client_exceptions(func):
-    """Catches exceptions that can be thrown by Client and displays them in status bar.
-
-    :param func: function - function that uses Client methods
-    :return: wrapped function
-    """
-    @wraps(func)
-    def wrapped(self, *args, **kwargs):
-        try:
-            return func(self, *args, **kwargs)
-        except (ClientException, error, herror, gaierror, timeout) as exc:
-            self.status_bar = 'Error: {}'.format(exc.message)
-
-    return wrapped
-
-
 class Application(Frame, object):
     """The application main class."""
     WIDTH, HEIGHT = 1280, 720
@@ -66,6 +51,7 @@ class Application(Frame, object):
         'defaultextension': '.json',
         'filetypes': [('JSON file', '*.json')]
     }
+    DEFAULTS = 'default_settings.yaml'
 
     def __init__(self, master=None):
         """Creates application main window with sizes self.WIDTH and self.HEIGHT.
@@ -75,23 +61,41 @@ class Application(Frame, object):
         super(Application, self).__init__(master)
         self.master.title('Engine Game')
         self.master.geometry('{}x{}'.format(self.WIDTH, self.HEIGHT))
+        self.master.protocol('WM_DELETE_WINDOW', self.exit)
 
         self.source, self._map, self.points, self.lines, self.captured_point = None, None, None, None, None
         self.x0, self.y0, self.scale_x, self.scale_y, self.font_size = None, None, None, None, None
         self.coordinates, self.captured_lines = {}, {}
         self.canvas_obj = AttrDict()
-
-        self.settings_window = None
-        self.client = Client()
-        self._server_settings = [self.client.host, self.client.port, self.client.username, self.client.password]
-        self.player_idx, self.idx, self._ratings, self._posts, self._trains = None, None, {}, {}, {}
         self.icons = {
+            0: PhotoImage(file=join('icons', 'user_city.png')),
             1: PhotoImage(file=join('icons', 'city.png')),
             2: PhotoImage(file=join('icons', 'market.png')),
             3: PhotoImage(file=join('icons', 'store.png')),
             4: PhotoImage(file=join('icons', 'train.png')),
             5: PhotoImage(file=join('icons', 'point.png'))
         }
+        self.queue_requests = {
+            0: self.set_status_bar,
+            1: self.build_map,
+            2: self.refresh_map
+        }
+
+        self.settings_window = None
+        if exists(expanduser(self.DEFAULTS)):
+            with open(expanduser(self.DEFAULTS), 'r') as cfg:
+                defaults = DefaultsDict.from_yaml(cfg)
+            self.host = None if defaults.host is None else str(defaults.host)
+            self.port = None if defaults.port is None else int(defaults.port)
+            self.timeout = None if defaults.timeout is None else int(defaults.timeout)
+            self.username = None if defaults.username is None else str(defaults.username)
+            self.password = None if defaults.password is None else str(defaults.password)
+        else:
+            self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
+
+        self.posts, self.trains = {}, {}
+        self.bot = Bot()
+        self.bot_thread = None
 
         self.menu = Menu(self)
         filemenu = Menu(self.menu)
@@ -99,7 +103,7 @@ class Application(Frame, object):
         filemenu.add_command(label='Server settings', command=self.open_server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
         self.menu.add_cascade(label='File', menu=filemenu)
-        self.menu.add_command(label='Play', command=self.play)
+        self.menu.add_command(label='Play', command=self.bot_control)
         master.config(menu=self.menu)
 
         self._status_bar = StringVar()
@@ -134,19 +138,7 @@ class Application(Frame, object):
         self.show_weight_check.pack(side=LEFT)
 
         self.pack(fill=BOTH, expand=True)
-
-        self.login()
-
-    @property
-    def status_bar(self):
-        """Returns the actual status bar value."""
-        return self._status_bar.get()
-
-    @status_bar.setter
-    def status_bar(self, value):
-        """Assigns new status bar value and updates corresponding value."""
-        self._status_bar.set(value)
-        self.label.update()
+        self.set_status_bar('Click Play to start the game')
 
     @property
     def map(self):
@@ -160,83 +152,6 @@ class Application(Frame, object):
         self.canvas.configure(scrollregion=(0, 0, self.canvas.winfo_width(), self.canvas.winfo_height()))
         self.x0, self.y0 = self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2
         self._map = value
-
-    @property
-    def server_settings(self):
-        """Returns the list of actual server settings."""
-        return self._server_settings
-
-    @server_settings.setter
-    def server_settings(self, value):
-        """Logs in and receives map each time a non-empty list of server settings was assigned."""
-        if value:
-            if self.client.connection:
-                self.logout()
-            self._server_settings = value
-            self.login()
-            self.get_map()
-        else:
-            self._server_settings = []
-
-    @property
-    def ratings(self):
-        """Returns the dict of actual ratings."""
-        return self._ratings
-
-    @ratings.setter
-    def ratings(self, value):
-        """Shows player's rating in status bar each time a non-empty dict of ratings is assigned."""
-        if value:
-            self._ratings = value
-            self.status_bar = '{}: {}'.format(value[self.player_idx]['name'], value[self.player_idx]['rating'])
-        else:
-            self._ratings = {}
-
-    @property
-    def posts(self):
-        """Returns the dict of actual posts."""
-        return self._posts
-
-    @posts.setter
-    def posts(self, value):
-        """Redraws map each time a non-empty dict of posts is assigned and at least 1 post is added or changed.
-
-        :param value: list - list of posts
-        :return: None
-        """
-        changed = False
-        if value:
-            for item in value:
-                if item['point_idx'] not in self._posts.keys() or self._posts[item['point_idx']] != item:
-                    self._posts[item['point_idx']] = item
-                    changed = True
-            if changed:
-                self.redraw_map() if hasattr(self.canvas_obj, 'point') else self.build_map()
-        else:
-            self._posts = {}
-
-    @property
-    def trains(self):
-        """Returns the actual trains."""
-        return self._trains
-
-    @trains.setter
-    def trains(self, value):
-        """Redraws trains each time a non-empty dict of trains is assigned and at least 1 train is added or changed.
-
-        :param value: list - list of trains
-        :return: None
-        """
-        changed = False
-        if value:
-            for item in value:
-                if item['idx'] not in self._trains.keys() or self._trains[item['idx']] != item:
-                    self._trains[item['idx']] = item
-                    changed = True
-            if changed:
-                self.redraw_trains() if hasattr(self.canvas_obj, 'train') else self.draw_trains()
-        else:
-            self._trains = {}
 
     @staticmethod
     def midpoint(x_start, y_start, x_end, y_end):
@@ -292,13 +207,13 @@ class Application(Frame, object):
         for obj_id in obj_ids:
             if obj_id in self.canvas_obj.point.keys():
                 self.captured_point = obj_id
-                point = self.canvas_obj.point[obj_id]['idx']
+                point_idx = self.canvas_obj.point[obj_id]['idx']
                 self.captured_lines = {}
-                for key, value in self.canvas_obj.line.items():
-                    if value['start_point'] == point:
-                        self.captured_lines[key] = 'start_point'
-                    if value['end_point'] == point:
-                        self.captured_lines[key] = 'end_point'
+                for line_id, attr in self.canvas_obj.line.items():
+                    if attr['start_point'] == point_idx:
+                        self.captured_lines[line_id] = 'start_point'
+                    if attr['end_point'] == point_idx:
+                        self.captured_lines[line_id] = 'end_point'
         if self.weighted.get():
             self.weighted.set(0)
 
@@ -332,14 +247,14 @@ class Application(Frame, object):
             self.coordinates[self.canvas_obj.point[self.captured_point]['idx']] = (new_x, new_y)
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
-            for key, value in self.captured_lines.items():
-                line_attrs = self.canvas_obj.line[key]
-                if value == 'start_point':
+            for line_id, attr in self.captured_lines.items():
+                line_attrs = self.canvas_obj.line[line_id]
+                if attr == 'start_point':
                     x, y = self.coordinates[line_attrs['end_point']]
-                    self.canvas.coords(key, new_x, new_y, x, y)
+                    self.canvas.coords(line_id, new_x, new_y, x, y)
                 else:
                     x, y = self.coordinates[line_attrs['start_point']]
-                    self.canvas.coords(key, x, y, new_x, new_y)
+                    self.canvas.coords(line_id, x, y, new_x, new_y)
                 if self.show_weight.get():
                     mid_x, mid_y = self.midpoint(new_x, new_y, x, y)
                     self.canvas.coords(line_attrs['weight_obj'][1], mid_x, mid_y)
@@ -349,12 +264,12 @@ class Application(Frame, object):
             self.redraw_trains()
 
     def file_open(self):
-        """Opens file dialog and builds and draws a map once a file is chosen."""
+        """Opens file dialog and builds and draws a map once a file is chosen. Stops bot if its started."""
         path = tkFileDialog.askopenfile(parent=self.master, **self.FILE_OPEN_OPTIONS)
         if path:
+            if self.bot.started:
+                self.bot_control()
             self.source = path.name
-            if self.client.connection:
-                self.client.logout()
             self.weighted_check.configure(state=NORMAL)
             self.build_map()
 
@@ -363,20 +278,51 @@ class Application(Frame, object):
         ServerSettings(self, title='Server settings')
 
     def exit(self):
-        """Closes application and sends logout request."""
-        self.logout()
+        """Closes application and stops bot if its started."""
+        if self.bot.started:
+            self.bot_control()
         self.master.destroy()
 
-    @client_exceptions
-    def play(self):
-        """Calls bot for playing the game."""
-        pass
+    def bot_control(self):
+        """Starts bot for playing the game or stops it if it is started."""
+        if not self.bot.started:
+            self.bot_thread = Thread(target=self.bot.start, kwargs={
+                'host': self.host,
+                'port': self.port,
+                'time_out': self.timeout,
+                'username': self.username,
+                'password': self.password})
+            self.requests_executor()
+            self.bot_thread.start()
+            if self.bot.started:
+                self.menu.entryconfigure(5, label='Stop')
+        else:
+            self.bot.stop()
+            self.bot_thread.join()
+            self.posts, self.trains = {}, {}
+            if not self.bot.started:
+                self.menu.entryconfigure(5, label='Play')
 
-    def build_map(self):
-        """Builds and draws new map."""
+    def set_status_bar(self, value):
+        """Assigns new status bar value and updates it.
+
+        :param value: string - status bar string value
+        :return: None
+        """
+        self._status_bar.set(value)
+        self.label.update()
+
+    def build_map(self, source=None):
+        """Builds and draws new map.
+
+        :param source: string - source string; could be JSON string or path to *.json file.
+        :return: None
+        """
+        if source is not None:
+            self.source = source
         if self.source is not None:
             self.map = Graph(self.source, weighted=self.weighted.get())
-            self.status_bar = 'Map title: {}'.format(self.map.name)
+            self.set_status_bar('Map title: {}'.format(self.map.name))
             self.points, self.lines = self.map.get_coordinates()
             self.draw_map()
 
@@ -394,47 +340,75 @@ class Application(Frame, object):
     def redraw_map(self):
         """Redraws existing map by existing coordinates."""
         if self.map:
-            self.canvas.delete('all')
-            self.draw_map()
+            for obj_id in self.canvas_obj.line:
+                self.canvas.delete(obj_id)
+            self.draw_lines()
+        self.redraw_points()
+
+    def redraw_points(self):
+        """Redraws map points by existing coordinates."""
+        if self.map:
+            for obj_id, attrs in self.canvas_obj.point.items():
+                if attrs['text_obj'] is not None:
+                    self.canvas.delete(attrs['text_obj'])
+                self.canvas.delete(obj_id)
+            self.draw_points()
 
     def redraw_trains(self):
         """Redraws existing trains."""
         if self.trains and hasattr(self.canvas_obj, 'train'):
-            for train in self.canvas_obj.train.keys():
-                self.canvas.delete(train)
-            self.draw_trains()
+            for obj_id, attrs in self.canvas_obj.train.items():
+                self.canvas.delete(attrs['text_obj'])
+                self.canvas.delete(obj_id)
+        self.draw_trains()
 
     @prepare_coordinates
     def draw_points(self):
         """Draws map points by prepared coordinates."""
         point_objs = {}
-        for point in self.points.keys():
-            x, y = self.coordinates[point]
-            if self.posts and point in self.posts.keys():
-                icon_id = self.posts[point]['type']
-                text = self.posts[point]['name'].upper()
-                point_id = self.canvas.create_image(x, y, image=self.icons[icon_id])
-                y -= (self.icons[icon_id].height() / 2) + self.font_size
-                text_id = self.canvas.create_text(x, y, text=text, font="{} {}".format(self.FONT, self.font_size))
-                self.canvas.tag_raise(text_id)
+        captured_point_idx = self.canvas_obj.point[self.captured_point]['idx'] if self.captured_point else None
+        for idx in self.points.keys():
+            x, y = self.coordinates[idx]
+            if self.posts and idx in self.posts.keys():
+                post_type = self.posts[idx]['type']
+                if post_type == 1:
+                    status = '{}/{} {}/{} {}/{}'.format(self.posts[idx]['population'],
+                                                        self.posts[idx]['population_capacity'],
+                                                        self.posts[idx]['product'],
+                                                        self.posts[idx]['product_capacity'],
+                                                        self.posts[idx]['armor'],
+                                                        self.posts[idx]['armor_capacity'])
+                elif post_type == 2:
+                    status = '{}/{}'.format(self.posts[idx]['product'], self.posts[idx]['product_capacity'])
+                else:
+                    status = '{}/{}'.format(self.posts[idx]['armor'], self.posts[idx]['armor_capacity'])
+                image_id = 0 if post_type == 1 and self.posts[idx]['player_idx'] == self.bot.player_idx else post_type
+                point_id = self.canvas.create_image(x, y, image=self.icons[image_id])
+                y -= (self.icons[post_type].height() / 2) + self.font_size
+                text_id = self.canvas.create_text(x, y, text=status, font="{} {}".format(self.FONT, self.font_size))
             else:
-                icon_id = 5
-                point_id = self.canvas.create_image(x, y, image=self.icons[icon_id])
+                post_type = 5
+                point_id = self.canvas.create_image(x, y, image=self.icons[post_type])
                 text_id = None
-            point_objs[point_id] = {'idx': point, 'text_obj': text_id, 'icon': icon_id}
+            point_objs[point_id] = {'idx': idx, 'text_obj': text_id, 'icon': post_type}
+            self.captured_point = point_id if idx == captured_point_idx else self.captured_point
         self.canvas_obj['point'] = point_objs
 
     @prepare_coordinates
     def draw_lines(self):
         """Draws map lines by prepared coordinates and shows their weights if self.show_weight is set to 1."""
-        line_objs = {}
+        line_objs, captured_lines_idx = {}, {}
+        if self.captured_lines:
+            for line_id in self.captured_lines.keys():
+                captured_lines_idx[self.canvas_obj.line[line_id]['idx']] = line_id
         for idx, attrs in self.lines.items():
             x_start, y_start = self.coordinates[attrs['start_point']]
             x_stop, y_stop = self.coordinates[attrs['end_point']]
             line_id = self.canvas.create_line(x_start, y_start, x_stop, y_stop)
-            self.canvas.tag_lower(line_id)
             line_objs[line_id] = {'idx': idx, 'weight': attrs['weight'], 'start_point': attrs['start_point'],
                                   'end_point': attrs['end_point'], 'weight_obj': ()}
+            if idx in captured_lines_idx.keys():
+                self.captured_lines[line_id] = self.captured_lines.pop(captured_lines_idx[idx])
         self.canvas_obj['line'] = line_objs
         self.show_weights()
 
@@ -451,8 +425,12 @@ class Application(Frame, object):
             x_end, y_end = self.coordinates[end_point]
             delta_x, delta_y = int((x_start - x_end) / weight) * position, int((y_start - y_end) / weight) * position
             indent_y = self.icons[4].height() / 2
-            train_id = self.canvas.create_image(x_start - delta_x, y_start - delta_y - indent_y, image=self.icons[4])
-            trains[train_id] = {'icon': 4}
+            x, y = x_start - delta_x, y_start - delta_y
+            train_id = self.canvas.create_image(x, y - indent_y, image=self.icons[4])
+            status = '{}/{}'.format(train['goods'], train['goods_capacity'])
+            text_id = self.canvas.create_text(x, y - (2 * indent_y + self.font_size), text=status,
+                                              font="{} {}".format(self.FONT, self.font_size))
+            trains[train_id] = {'icon': 4, 'text_obj': text_id}
         self.canvas_obj['train'] = trains
 
     def show_weights(self):
@@ -480,43 +458,25 @@ class Application(Frame, object):
                     for obj in line['weight_obj']:
                         self.canvas.itemconfigure(obj, state='hidden')
 
-    @client_exceptions
-    def login(self):
-        """Sends log in request and displays username and rating in status bar."""
-        self.status_bar = 'Connecting...'
-        self.client.host, self.client.port = self.server_settings[:2]
-        response = loads(self.client.login(name=self.server_settings[2], password=self.server_settings[3]).data)
-        self.player_idx = response['idx']
-        self.status_bar = '{}: {}'.format(response['name'], response['rating'])
+    def requests_executor(self):
+        """Dequeues and executes requests."""
+        if self.bot_thread.is_alive() and not self.bot.queue.empty():
+            request_type, request_body = self.bot.queue.get()
+            self.queue_requests[request_type](request_body)
+        self.after(1, self.requests_executor)
 
-    @client_exceptions
-    def logout(self):
-        """Sends log out request and resets internally used variables."""
-        self.client.logout()
-        self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
+    def refresh_map(self, dynamic_objects):
+        """Refreshes map with passed dynamic objects.
 
-    @client_exceptions
-    def get_map(self):
-        """Requests static and dynamic objects and builds map."""
-        self.source = self.client.get_static_objects().data
-        self.build_map()
-        self.refresh_map()
-
-    @client_exceptions
-    def refresh_map(self):
-        """Requests dynamic objects and assigns new or changed values."""
-        dynamic_objects = loads(self.client.get_dynamic_objects().data)
-        self.idx = dynamic_objects['idx']
-        self.ratings = dynamic_objects['ratings']
-        self.posts = dynamic_objects['posts']
-        self.trains = dynamic_objects['trains']
-        self.canvas.update()
-
-    @client_exceptions
-    def tick(self):
-        """Sends client.turn request and refreshes map."""
-        self.client.turn()
-        self.refresh_map()
+        :param dynamic_objects: dict - dict of dynamic objects
+        :return: None
+        """
+        for post in dynamic_objects['posts']:
+            self.posts[post['point_idx']] = post
+        for train in dynamic_objects['trains']:
+            self.trains[train['idx']] = train
+        self.redraw_points()
+        self.redraw_trains()
 
 
 class ServerSettings(tkSimpleDialog.Dialog, object):
@@ -538,13 +498,14 @@ class ServerSettings(tkSimpleDialog.Dialog, object):
         :return: Entry instance
         """
         self.resizable(False, False)
+        settings = [self.parent.host, self.parent.port, self.parent.username, self.parent.password]
         Label(master, text="Host:").grid(row=0, sticky='W')
         Label(master, text="Port:").grid(row=1, sticky='W')
         Label(master, text="Player name:").grid(row=2, sticky='W')
         Label(master, text="Password:").grid(row=3, sticky='W')
         for i in xrange(4):
             self.entries.append(Entry(master))
-            setting = self.parent.server_settings[i]
+            setting = settings[i]
             self.entries[i].insert(END, setting if setting is not None else '')
             self.entries[i].grid(row=i, column=1)
         return self.entries[0]
@@ -554,4 +515,4 @@ class ServerSettings(tkSimpleDialog.Dialog, object):
         settings = []
         for entry in self.entries:
             settings.append(str(entry.get()) if entry.get() != '' else None)
-        self.parent.server_settings = settings
+        self.parent.host, self.parent.port, self.parent.username, self.parent.password = settings
