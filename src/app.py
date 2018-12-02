@@ -94,11 +94,7 @@ class Application(Frame, object):
             self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
 
         self.posts, self.trains = {}, {}
-        self.bot = Bot(host=self.host,
-                       port=self.port,
-                       time_out=self.timeout,
-                       username=self.username,
-                       password=self.password)
+        self.bot = Bot()
         self.bot_thread = None
 
         self.menu = Menu(self)
@@ -290,7 +286,12 @@ class Application(Frame, object):
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
         if not self.bot.started:
-            self.bot_thread = Thread(target=self.bot.start)
+            self.bot_thread = Thread(target=self.bot.start, kwargs={
+                'host': self.host,
+                'port': self.port,
+                'time_out': self.timeout,
+                'username': self.username,
+                'password': self.password})
             self.requests_executor()
             self.bot_thread.start()
             if self.bot.started:

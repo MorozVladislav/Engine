@@ -33,16 +33,9 @@ def client_exceptions(func):
 class Bot(object):
     """The bot main class."""
 
-    def __init__(self, host=None, port=None, time_out=None, username=None, password=None):
-        """Initiates bot.
-
-        :param host: string - host
-        :param port: int - port
-        :param time_out: int - timeout
-        :param username: string - username
-        :param password: string - password
-        """
-        self.host, self.port, self.timeout, self.username, self.password = host, port, time_out, username, password
+    def __init__(self):
+        """Initiates bot."""
+        self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
         self.client = None
         self.queue = Queue()
         self.started = False
@@ -107,8 +100,16 @@ class Bot(object):
         self.client.turn()
         self.refresh_map()
 
-    def start(self):
-        """Logs in and starts bot."""
+    def start(self, host=None, port=None, time_out=None, username=None, password=None):
+        """Logs in and starts bot.
+
+        :param host: string - host
+        :param port: int - port
+        :param time_out: int - timeout
+        :param username: string - username
+        :param password: string - password
+        """
+        self.host, self.port, self.timeout, self.username, self.password = host, port, time_out, username, password
         self.login()
         self.build_map()
         self.refresh_map()
