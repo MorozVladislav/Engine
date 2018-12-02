@@ -40,7 +40,7 @@ class Bot(object):
         self.queue = Queue()
         self.started = False
         self.lines, self.points, self.adjacencies = {}, {}, {}
-        self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
+        self.player_idx, self.town, self.idx, self.ratings, self.posts, self.trains = None, None, None, {}, {}, {}
 
     def refresh_status_bar(self, value):
         """Enqueues application status bar refresh request.
@@ -69,6 +69,8 @@ class Bot(object):
         self.ratings = dynamic_objects['ratings']
         for post in dynamic_objects['posts']:
             self.posts[post['point_idx']] = post
+            if post['type'] == 1 and post['player_idx'] == self.player_idx:
+                self.town = post
         for train in dynamic_objects['trains']:
             self.trains[train['idx']] = train
         rating = '{}: {}'.format(self.ratings[self.player_idx]['name'], self.ratings[self.player_idx]['rating'])
@@ -116,9 +118,8 @@ class Bot(object):
         self.create_adjacency_list()
         self.started = True
         while self.started:
-            self.move_train(1, 19)
-            self.move_train(1, 16)
-            self.move_train(1, 13)
+            route = self.get_route(1, 2)
+            self.move_train(1, route)
         self.logout()
 
     def stop(self):
@@ -158,28 +159,19 @@ class Bot(object):
             dist_to.pop(closest_point)
         return point_to
 
-    def move_train(self, idx, target_point):
-        """Moves train from current point to target point.
+    def move_train(self, idx, rote):
+        """Moves train over a rote.
 
         :param idx: int - train index
-        :param target_point: int - target point index
+        :param rote: list - list of turn points indexes
         :return: None
         """
-        current_point = self.get_current_point(idx)
-        point_to = self.dijkstra_algorithm(current_point)
-        while target_point != current_point:
-            if point_to[target_point] != current_point:
-                temp_point = point_to[target_point]
-                while point_to[temp_point] != current_point:
-                    temp_point = point_to[temp_point]
-            else:
-                temp_point = target_point
-            temp_line = self.adjacencies[current_point][temp_point]
-            direction = 1 if current_point == self.lines[temp_line]['points'][0] else -1
-            self.client.move_train(temp_line, direction, idx)
-            while temp_point != self.get_current_point(idx):
+        for i in xrange(len(rote) - 1):
+            line_idx = self.adjacencies[rote[i]][rote[i + 1]]
+            direction = 1 if rote[i] == self.lines[line_idx]['points'][0] else -1
+            self.client.move_train(line_idx, direction, idx)
+            while rote[i + 1] != self.get_current_point(idx):
                 self.tick()
-            current_point = self.get_current_point(idx)
 
     def get_current_point(self, idx):
         """Returns the current point of the train.
@@ -187,9 +179,76 @@ class Bot(object):
         :param idx: int - train index
         :return: int - current point index
         """
-        current_line = self.trains[idx]['line_idx']
-        if self.trains[idx]['position'] < self.lines[current_line]['length']:
-            current_point = self.lines[current_line]['points'][0]
+        line = self.trains[idx]['line_idx']
+        position = self.trains[idx]['position']
+        speed = self.trains[idx]['speed']
+        weight = self.lines[line]['length']
+        if 0 < position < weight:
+            current_point = self.lines[line]['points'][0] if speed >= 0 else self.lines[line]['points'][1]
         else:
-            current_point = self.lines[current_line]['points'][1]
+            current_point = self.lines[line]['points'][0] if position == 0 else self.lines[line]['points'][1]
         return current_point
+
+    def get_turn_points(self, train_idx, target_point, point_from=None):
+        """Returns a list of turn points of the shortest way from current point to target point.
+
+        :param train_idx: int - train index
+        :param target_point: int - target point index
+        :param point_from: int - point index to build way from, if None - the way builds from current point
+        :return: list - list of turn points
+        """
+        current_point = self.get_current_point(train_idx) if point_from is None else point_from
+        point_to = self.dijkstra_algorithm(current_point)
+        turn_points = [target_point]
+        if target_point != current_point:
+            temp_point = target_point
+            while point_to[temp_point] != current_point:
+                temp_point = point_to[temp_point]
+                turn_points.append(temp_point)
+            turn_points.append(current_point)
+        return list(reversed(turn_points))
+
+    def get_route(self, train_idx, goods_type):
+        """Returns most profitable route for a train or returns closest route back to town if the train is full.
+
+        :param train_idx: int - train index
+        :param goods_type: int - train index
+        :return: int - target point
+        """
+        train = self.trains[train_idx]
+        if train['goods'] < train['goods_capacity']:
+            target_posts = []
+            current = self.get_current_point(train_idx)
+            for post in self.posts.values():
+                if (post['type'] == goods_type or post['type'] == self.town['type']) and post['point_idx'] != current:
+                    target_posts.append(post)
+            max_efficiency, route = -1 * float('inf'), None
+            for post in target_posts:
+                points_to = self.get_turn_points(train_idx, post['point_idx'])
+                points_from = self.get_turn_points(train_idx, self.town['point_idx'], point_from=post['point_idx'])
+                trip_to = 0
+                for i in xrange(len(points_to) - 1):
+                    line_idx = self.adjacencies[points_to[i]][points_to[i + 1]]
+                    trip_to += self.lines[line_idx]['length']
+                trip_from = 0
+                for i in xrange(len(points_from) - 1):
+                    line_idx = self.adjacencies[points_from[i]][points_from[i + 1]]
+                    trip_from += self.lines[line_idx]['length']
+                if post != self.town:
+                    post_goods = post['product'] if goods_type == 2 else post['armor']
+                    post_capacity = post['product_capacity'] if goods_type == 2 else post['armor_capacity']
+                    replenishment = post_goods + post['replenishment'] * trip_to
+                    available_goods = post_capacity if replenishment >= post_capacity else replenishment
+                    space = train['goods_capacity'] - train['goods']
+                    goods = train['goods_capacity'] if available_goods >= space else train['goods'] + available_goods
+                    if goods_type == 2:
+                        efficiency = goods - (trip_to + trip_from) * self.town['population']
+                    else:
+                        efficiency = goods
+                else:
+                    efficiency = train['goods'] - (trip_to + trip_from) * self.town['population']
+                if efficiency > max_efficiency:
+                    max_efficiency = efficiency
+                    route = points_to
+            return route[:2]
+        return self.get_turn_points(train_idx, self.town['point_idx'])
