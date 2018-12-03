@@ -130,12 +130,12 @@ class Application(Frame, object):
         self.frame.pack(fill=BOTH, expand=True)
 
         self.weighted = IntVar(value=1)
-        self.weighted_check = Checkbutton(self, text='Proportionally to weight', variable=self.weighted,
+        self.weighted_check = Checkbutton(self, text='Proportionally to length', variable=self.weighted,
                                           command=self._proportionally)
         self.weighted_check.pack(side=LEFT)
 
         self.show_weight = IntVar()
-        self.show_weight_check = Checkbutton(self, text='Show weight', variable=self.show_weight,
+        self.show_weight_check = Checkbutton(self, text='Show length', variable=self.show_weight,
                                              command=self.show_weights)
         self.show_weight_check.pack(side=LEFT)
 
@@ -465,12 +465,14 @@ class Application(Frame, object):
     def requests_executor(self):
         """Dequeues and executes requests. Assigns corresponding label to bot control button."""
         if self.bot_thread:
-            self.menu.entryconfigure(5, label='Stop')
+            if self.menu.entrycget(5, 'label') == 'Play':
+                self.menu.entryconfigure(5, label='Stop')
             if not self.bot.queue.empty():
                 request_type, request_body = self.bot.queue.get()
                 self.queue_requests[request_type](request_body)
         else:
-            self.menu.entryconfigure(5, label='Start')
+            if self.menu.entrycget(5, 'label') == 'Stop':
+                self.menu.entryconfigure(5, label='Play')
         self.after(1, self.requests_executor)
 
     def refresh_map(self, dynamic_objects):
