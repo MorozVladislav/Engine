@@ -26,7 +26,7 @@ def prepare_coordinates(func):
     """
     @wraps(func)
     def wrapped(self, *args, **kwargs):
-        if self.scale_x is None or self.scale_y is None:
+        if not self.scale_x or not self.scale_y:
             indent_x = max([icon.width() for icon in self.icons.values()]) + 5
             indent_y = max([icon.height() for icon in self.icons.values()]) + self.font_size + 5
             self.scale_x = int((self.x0 - indent_x) / max([abs(point['x']) for point in self.points.values()]))
@@ -85,11 +85,11 @@ class Application(Frame, object):
         if exists(expanduser(self.DEFAULTS)):
             with open(expanduser(self.DEFAULTS), 'r') as cfg:
                 defaults = DefaultsDict.from_yaml(cfg)
-            self.host = None if defaults.host is None else str(defaults.host)
-            self.port = None if defaults.port is None else int(defaults.port)
-            self.timeout = None if defaults.timeout is None else int(defaults.timeout)
-            self.username = None if defaults.username is None else str(defaults.username)
-            self.password = None if defaults.password is None else str(defaults.password)
+            self.host = None if not defaults.host else str(defaults.host)
+            self.port = None if not defaults.port else int(defaults.port)
+            self.timeout = None if not defaults.timeout else int(defaults.timeout)
+            self.username = None if not defaults.username else str(defaults.username)
+            self.password = None if not defaults.password else str(defaults.password)
         else:
             self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
 
@@ -179,7 +179,7 @@ class Application(Frame, object):
         :param event: Tkinter.Event - Tkinter.Event instance for Configure event
         :return: None
         """
-        if self.map is not None:
+        if self.map:
             if event.width > self.canvas.bbox('all')[2] and event.height > self.canvas.bbox('all')[3]:
                 self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
                 self.clear_map()
@@ -242,7 +242,7 @@ class Application(Frame, object):
             new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
             self.canvas.coords(self.captured_point, new_x, new_y)
             indent_y = self.icons[self.canvas_obj.point[self.captured_point]['icon']].height() / 2 + self.font_size
-            if self.canvas_obj.point[self.captured_point]['text_obj'] is not None:
+            if self.canvas_obj.point[self.captured_point]['text_obj']:
                 self.canvas.coords(self.canvas_obj.point[self.captured_point]['text_obj'], new_x, new_y - indent_y)
             self.coordinates[self.canvas_obj.point[self.captured_point]['idx']] = (new_x, new_y)
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
@@ -318,9 +318,9 @@ class Application(Frame, object):
         :param source: string - source string; could be JSON string or path to *.json file.
         :return: None
         """
-        if source is not None:
+        if source:
             self.source = source
-        if self.source is not None:
+        if self.source:
             self.map = Graph(self.source, weighted=self.weighted.get())
             self.set_status_bar('Map title: {}'.format(self.map.name))
             self.points, self.lines = self.map.get_coordinates()
@@ -349,7 +349,7 @@ class Application(Frame, object):
         """Redraws map points by existing coordinates."""
         if self.map:
             for obj_id, attrs in self.canvas_obj.point.items():
-                if attrs['text_obj'] is not None:
+                if attrs['text_obj']:
                     self.canvas.delete(attrs['text_obj'])
                 self.canvas.delete(obj_id)
             self.draw_points()
@@ -506,7 +506,7 @@ class ServerSettings(tkSimpleDialog.Dialog, object):
         for i in xrange(4):
             self.entries.append(Entry(master))
             setting = settings[i]
-            self.entries[i].insert(END, setting if setting is not None else '')
+            self.entries[i].insert(END, setting if setting else '')
             self.entries[i].grid(row=i, column=1)
         return self.entries[0]
 
