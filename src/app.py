@@ -186,7 +186,7 @@ class Application(Frame, object):
                 self.draw_map()
             else:
                 self.redraw_map()
-            self.draw_trains()
+            self.redraw_trains()
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
     def _proportionally(self):
