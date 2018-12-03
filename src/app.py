@@ -273,7 +273,7 @@ class Application(Frame, object):
         """Opens file dialog and builds and draws a map once a file is chosen. Stops bot if its started."""
         path = tkFileDialog.askopenfile(parent=self.master, **self.FILE_OPEN_OPTIONS)
         if path:
-            if self.bot.started:
+            if self.bot_thread:
                 self.bot_control()
             self.source = path.name
             self.weighted_check.configure(state=NORMAL)
@@ -285,13 +285,13 @@ class Application(Frame, object):
 
     def exit(self):
         """Closes application and stops bot if its started."""
-        if self.bot.started:
+        if self.bot_thread:
             self.bot_control()
         self.master.destroy()
 
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
-        if not self.bot.started:
+        if not self.bot_thread:
             self.bot_thread = Thread(target=self.bot.start, kwargs={
                 'host': self.host,
                 'port': self.port,
@@ -303,6 +303,7 @@ class Application(Frame, object):
         else:
             self.bot.stop()
             self.bot_thread.join()
+            self.bot_thread = None
             self.posts, self.trains = {}, {}
 
     def set_status_bar(self, value):
@@ -463,7 +464,7 @@ class Application(Frame, object):
 
     def requests_executor(self):
         """Dequeues and executes requests. Assigns corresponding label to bot control button."""
-        if self.bot_thread.is_alive():
+        if self.bot_thread:
             self.menu.entryconfigure(5, label='Stop')
             if not self.bot.queue.empty():
                 request_type, request_body = self.bot.queue.get()

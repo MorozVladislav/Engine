@@ -87,7 +87,6 @@ class Bot(object):
                 self.town = post
         for train in dynamic_objects['trains']:
             self.trains[train['idx']] = train
-        print dynamic_objects['trains']
         rating = '{}: {}'.format(self.ratings[self.player_idx]['name'], self.ratings[self.player_idx]['rating'])
         self.refresh_status_bar(rating)
         self.queue.put((3, dynamic_objects))
