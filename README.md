@@ -28,6 +28,6 @@ cd src
 python2.7 -m main.py
 ```
 
-## How to use Engine Application
+## How to use Engine Feachers
 1. For moving of any map point just grab it with left mouse button than move and drop where you want.
 2. For connecting to Server open "Server Settings" and enter you credentials
