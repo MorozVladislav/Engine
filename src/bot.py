@@ -197,7 +197,7 @@ class Bot(object):
         :param point_from: int - point index to build way from, if None - the way builds from current point
         :return: list - list of turn points
         """
-        current_point = self.get_current_point(train_idx) if point_from is None else point_from
+        current_point = self.get_current_point(train_idx) if not point_from else point_from
         point_to = self.dijkstra_algorithm(current_point)
         turn_points = [target_point]
         if target_point != current_point:
