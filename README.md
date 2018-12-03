@@ -30,4 +30,5 @@ python2.7 -m main.py
 
 ## How to use Engine Feachers
 1. For moving of any map point just grab it with left mouse button than move and drop where you want.
-2. For connecting to Server open "Server Settings" and enter you credentials
+2. For connecting a server go to "File" -> "Server settings" fill all necessary fields and press "Ok". 
+   Any server connection errors will be displayed in status bar at the top of the window."
