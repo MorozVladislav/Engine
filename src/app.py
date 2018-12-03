@@ -3,7 +3,7 @@
 """The module implements GUI of the game."""
 import tkFileDialog
 import tkSimpleDialog
-from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
+from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry, Button
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, X, Y
 from functools import wraps
 from os.path import expanduser, exists
@@ -75,7 +75,10 @@ class Application(Frame, object):
             4: PhotoImage(file=join('icons', 'point.png')),
             5: PhotoImage(file=join('icons', 'player_train.png')),
             6: PhotoImage(file=join('icons', 'train.png')),
-            7: PhotoImage(file=join('icons', 'crashed_train.png'))
+            7: PhotoImage(file=join('icons', 'crashed_train.png')),
+            8: PhotoImage(file=join('icons', 'play.png')),
+            9: PhotoImage(file=join('icons', 'stop.png')),
+
         }
         self.queue_requests = {
             0: self.set_status_bar,
@@ -138,6 +141,9 @@ class Application(Frame, object):
         self.show_weight_check = Checkbutton(self, text='Show length', variable=self.show_weight,
                                              command=self.show_weights)
         self.show_weight_check.pack(side=LEFT)
+
+        self.button = Button(self, image=self.icons[8], highlightbackground="white", command=self.bot_control)
+        self.button.pack(side=LEFT)
 
         self.pack(fill=BOTH, expand=True)
         self.set_status_bar('Click Play to start the game')
@@ -282,6 +288,8 @@ class Application(Frame, object):
     def open_server_settings(self):
         """Opens server settings window."""
         ServerSettings(self, title='Server settings')
+        self.button.configure(image=self.icons[8])
+        self.set_status_bar('Click Play to start the game')
 
     def exit(self):
         """Closes application and stops bot if its started."""
@@ -292,6 +300,7 @@ class Application(Frame, object):
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
         if not self.bot_thread:
+            self.button.configure(image=self.icons[8])
             self.bot_thread = Thread(target=self.bot.start, kwargs={
                 'host': self.host,
                 'port': self.port,
@@ -300,11 +309,17 @@ class Application(Frame, object):
                 'password': self.password})
             self.requests_executor()
             self.bot_thread.start()
+            if self.bot_thread and self.bot_thread.start():
+                self.button.configure(image=self.icons[8])
         else:
+            self.button.configure(image=self.icons[9])
             self.bot.stop()
             self.bot_thread.join()
             self.bot_thread = None
             self.posts, self.trains = {}, {}
+            if not self.bot_thread and self.bot_thread.start():
+                self.button.configure(image=self.icons[9])
+
 
     def set_status_bar(self, value):
         """Assigns new status bar value and updates it.
@@ -328,6 +343,7 @@ class Application(Frame, object):
             self.set_status_bar('Map title: {}'.format(self.map.name))
             self.points, self.lines = self.map.get_coordinates()
             self.draw_map()
+            
 
     def draw_map(self):
         """Draws map by prepared coordinates."""
