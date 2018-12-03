@@ -51,10 +51,24 @@ class Bot(object):
         self.queue.put((0, value))
 
     @client_exceptions
+    def login(self):
+        """Creates Client, sends log in request and displays username and rating in status bar."""
+        self.refresh_status_bar('Connecting...')
+        self.client = Client(host=self.host,
+                             port=self.port,
+                             timeout=self.timeout,
+                             username=self.username,
+                             password=self.password)
+        response = loads(self.client.login().data)
+        self.player_idx = response['idx']
+        self.queue.put((1, self.player_idx))
+        self.refresh_status_bar('{}: {}'.format(response['name'], response['rating']))
+
+    @client_exceptions
     def build_map(self):
         """Requests static objects and enqueues draw map request."""
         static_objects = self.client.get_static_objects().data
-        self.queue.put((1, static_objects))
+        self.queue.put((2, static_objects))
         static_objects = loads(static_objects)
         for point in static_objects['points']:
             self.points[point['idx']] = point
@@ -73,22 +87,10 @@ class Bot(object):
                 self.town = post
         for train in dynamic_objects['trains']:
             self.trains[train['idx']] = train
+        print dynamic_objects['trains']
         rating = '{}: {}'.format(self.ratings[self.player_idx]['name'], self.ratings[self.player_idx]['rating'])
         self.refresh_status_bar(rating)
-        self.queue.put((2, dynamic_objects))
-
-    @client_exceptions
-    def login(self):
-        """Creates Client, sends log in request and displays username and rating in status bar."""
-        self.refresh_status_bar('Connecting...')
-        self.client = Client(host=self.host,
-                             port=self.port,
-                             timeout=self.timeout,
-                             username=self.username,
-                             password=self.password)
-        response = loads(self.client.login().data)
-        self.player_idx = response['idx']
-        self.refresh_status_bar('{}: {}'.format(response['name'], response['rating']))
+        self.queue.put((3, dynamic_objects))
 
     @client_exceptions
     def logout(self):

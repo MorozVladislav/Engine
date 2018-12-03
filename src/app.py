@@ -68,17 +68,20 @@ class Application(Frame, object):
         self.coordinates, self.captured_lines = {}, {}
         self.canvas_obj = AttrDict()
         self.icons = {
-            0: PhotoImage(file=join('icons', 'user_city.png')),
+            0: PhotoImage(file=join('icons', 'player_city.png')),
             1: PhotoImage(file=join('icons', 'city.png')),
             2: PhotoImage(file=join('icons', 'market.png')),
             3: PhotoImage(file=join('icons', 'store.png')),
-            4: PhotoImage(file=join('icons', 'train.png')),
-            5: PhotoImage(file=join('icons', 'point.png'))
+            4: PhotoImage(file=join('icons', 'point.png')),
+            5: PhotoImage(file=join('icons', 'player_train.png')),
+            6: PhotoImage(file=join('icons', 'train.png')),
+            7: PhotoImage(file=join('icons', 'crashed_train.png'))
         }
         self.queue_requests = {
             0: self.set_status_bar,
-            1: self.build_map,
-            2: self.refresh_map
+            1: self.set_player_idx,
+            2: self.build_map,
+            3: self.refresh_map
         }
 
         self.settings_window = None
@@ -92,8 +95,7 @@ class Application(Frame, object):
             self.password = None if not defaults.password else str(defaults.password)
         else:
             self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
-
-        self.posts, self.trains = {}, {}
+        self.player_idx, self.posts, self.trains = None, {}, {}
         self.bot = Bot()
         self.bot_thread = None
 
@@ -263,6 +265,10 @@ class Application(Frame, object):
 
             self.redraw_trains()
 
+    def set_player_idx(self, value):
+        """Sets a player idx value."""
+        self.player_idx = value
+
     def file_open(self):
         """Opens file dialog and builds and draws a map once a file is chosen. Stops bot if its started."""
         path = tkFileDialog.askopenfile(parent=self.master, **self.FILE_OPEN_OPTIONS)
@@ -294,14 +300,10 @@ class Application(Frame, object):
                 'password': self.password})
             self.requests_executor()
             self.bot_thread.start()
-            if self.bot.started:
-                self.menu.entryconfigure(5, label='Stop')
         else:
             self.bot.stop()
             self.bot_thread.join()
             self.posts, self.trains = {}, {}
-            if not self.bot.started:
-                self.menu.entryconfigure(5, label='Play')
 
     def set_status_bar(self, value):
         """Assigns new status bar value and updates it.
@@ -382,12 +384,12 @@ class Application(Frame, object):
                     status = '{}/{}'.format(self.posts[idx]['product'], self.posts[idx]['product_capacity'])
                 else:
                     status = '{}/{}'.format(self.posts[idx]['armor'], self.posts[idx]['armor_capacity'])
-                image_id = 0 if post_type == 1 and self.posts[idx]['player_idx'] == self.bot.player_idx else post_type
+                image_id = 0 if post_type == 1 and self.posts[idx]['player_idx'] == self.player_idx else post_type
                 point_id = self.canvas.create_image(x, y, image=self.icons[image_id])
                 y -= (self.icons[post_type].height() / 2) + self.font_size
                 text_id = self.canvas.create_text(x, y, text=status, font="{} {}".format(self.FONT, self.font_size))
             else:
-                post_type = 5
+                post_type = 4
                 point_id = self.canvas.create_image(x, y, image=self.icons[post_type])
                 text_id = None
             point_objs[point_id] = {'idx': idx, 'text_obj': text_id, 'icon': post_type}
@@ -424,9 +426,10 @@ class Application(Frame, object):
             x_start, y_start = self.coordinates[start_point]
             x_end, y_end = self.coordinates[end_point]
             delta_x, delta_y = int((x_start - x_end) / weight) * position, int((y_start - y_end) / weight) * position
-            indent_y = self.icons[4].height() / 2
             x, y = x_start - delta_x, y_start - delta_y
-            train_id = self.canvas.create_image(x, y - indent_y, image=self.icons[4])
+            image = self.icons[5] if train['player_idx'] == self.player_idx else self.icons[6]
+            indent_y = image.height() / 2
+            train_id = self.canvas.create_image(x, y - indent_y, image=image)
             status = '{}/{}'.format(train['goods'], train['goods_capacity'])
             text_id = self.canvas.create_text(x, y - (2 * indent_y + self.font_size), text=status,
                                               font="{} {}".format(self.FONT, self.font_size))
@@ -459,10 +462,14 @@ class Application(Frame, object):
                         self.canvas.itemconfigure(obj, state='hidden')
 
     def requests_executor(self):
-        """Dequeues and executes requests."""
-        if self.bot_thread.is_alive() and not self.bot.queue.empty():
-            request_type, request_body = self.bot.queue.get()
-            self.queue_requests[request_type](request_body)
+        """Dequeues and executes requests. Assigns corresponding label to bot control button."""
+        if self.bot_thread.is_alive():
+            self.menu.entryconfigure(5, label='Stop')
+            if not self.bot.queue.empty():
+                request_type, request_body = self.bot.queue.get()
+                self.queue_requests[request_type](request_body)
+        else:
+            self.menu.entryconfigure(5, label='Start')
         self.after(1, self.requests_executor)
 
     def refresh_map(self, dynamic_objects):
