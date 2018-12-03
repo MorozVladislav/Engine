@@ -3,7 +3,7 @@
 """The module implements GUI of the game."""
 import tkFileDialog
 import tkSimpleDialog
-from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
+from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry, Button
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, X, Y
 from functools import wraps
 from os.path import expanduser, exists
@@ -73,7 +73,9 @@ class Application(Frame, object):
             2: PhotoImage(file=join('icons', 'market.png')),
             3: PhotoImage(file=join('icons', 'store.png')),
             4: PhotoImage(file=join('icons', 'train.png')),
-            5: PhotoImage(file=join('icons', 'point.png'))
+            5: PhotoImage(file=join('icons', 'point.png')),
+            6: PhotoImage(file=join('icons', 'play.png')),
+            7: PhotoImage(file=join('icons', 'stop.png'))
         }
         self.queue_requests = {
             0: self.set_status_bar,
@@ -103,7 +105,6 @@ class Application(Frame, object):
         filemenu.add_command(label='Server settings', command=self.open_server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
         self.menu.add_cascade(label='File', menu=filemenu)
-        self.menu.add_command(label='Play', command=self.bot_control)
         master.config(menu=self.menu)
 
         self._status_bar = StringVar()
@@ -136,6 +137,8 @@ class Application(Frame, object):
         self.show_weight_check = Checkbutton(self, text='Show weight', variable=self.show_weight,
                                              command=self.show_weights)
         self.show_weight_check.pack(side=LEFT)
+        self.button = Button(self, image=self.icons[6], highlightbackground="white", command=self.bot_control)
+        self.button.pack(side=LEFT)
 
         self.pack(fill=BOTH, expand=True)
         self.set_status_bar('Click Play to start the game')
@@ -186,7 +189,7 @@ class Application(Frame, object):
                 self.draw_map()
             else:
                 self.redraw_map()
-            self.draw_trains()
+            self.redraw_trains()
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
     def _proportionally(self):
@@ -276,6 +279,9 @@ class Application(Frame, object):
     def open_server_settings(self):
         """Opens server settings window."""
         ServerSettings(self, title='Server settings')
+        self.button.configure(image=self.icons[6])
+        self.set_status_bar('Click Play to start the game')
+
 
     def exit(self):
         """Closes application and stops bot if its started."""
@@ -286,6 +292,7 @@ class Application(Frame, object):
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
         if not self.bot.started:
+            self.button.configure(image=self.icons[7])
             self.bot_thread = Thread(target=self.bot.start, kwargs={
                 'host': self.host,
                 'port': self.port,
@@ -294,14 +301,17 @@ class Application(Frame, object):
                 'password': self.password})
             self.requests_executor()
             self.bot_thread.start()
-            if self.bot.started:
-                self.menu.entryconfigure(5, label='Stop')
+            if self.bot_thread and self.bot.started:
+                self.button.configure(image=self.icons[7])
         else:
+            self.button.configure(image=self.icons[6])
             self.bot.stop()
             self.bot_thread.join()
             self.posts, self.trains = {}, {}
-            if not self.bot.started:
-                self.menu.entryconfigure(5, label='Play')
+            if not self.bot_thread and not self.bot.started:
+                self.button.configure(image=self.icons[6])
+
+
 
     def set_status_bar(self, value):
         """Assigns new status bar value and updates it.
