@@ -135,12 +135,12 @@ class Application(Frame, object):
         self.weighted = IntVar(value=1)
         self.weighted_check = Checkbutton(self, text='Proportionally to length', variable=self.weighted,
                                           command=self._proportionally)
-        self.weighted_check.pack(side=LEFT)
+        self.weighted_check.pack(side=RIGHT)
 
         self.show_weight = IntVar()
         self.show_weight_check = Checkbutton(self, text='Show length', variable=self.show_weight,
                                              command=self.show_weights)
-        self.show_weight_check.pack(side=LEFT)
+        self.show_weight_check.pack(side=RIGHT)
 
         self.button = Button(self, image=self.icons[8], highlightbackground="white", command=self.bot_control)
         self.button.pack(side=LEFT)
@@ -300,7 +300,7 @@ class Application(Frame, object):
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
         if not self.bot_thread:
-            self.button.configure(image=self.icons[8])
+            self.button.configure(image=self.icons[9])
             self.bot_thread = Thread(target=self.bot.start, kwargs={
                 'host': self.host,
                 'port': self.port,
@@ -309,16 +309,16 @@ class Application(Frame, object):
                 'password': self.password})
             self.requests_executor()
             self.bot_thread.start()
-            if self.bot_thread and self.bot_thread.start():
-                self.button.configure(image=self.icons[8])
+            if self.bot_thread:
+                self.button.configure(image=self.icons[9])
         else:
-            self.button.configure(image=self.icons[9])
+            self.button.configure(image=self.icons[8])
             self.bot.stop()
             self.bot_thread.join()
             self.bot_thread = None
             self.posts, self.trains = {}, {}
-            if not self.bot_thread and self.bot_thread.start():
-                self.button.configure(image=self.icons[9])
+            if not self.bot_thread:
+                self.button.configure(image=self.icons[8])
 
 
     def set_status_bar(self, value):
