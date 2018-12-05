@@ -78,6 +78,7 @@ class Application(Frame, object):
             7: PhotoImage(file=join('icons', 'crashed_train.png')),
             8: PhotoImage(file=join('icons', 'play.png')),
             9: PhotoImage(file=join('icons', 'stop.png')),
+            10: PhotoImage(file=join('icons', 'big_play.png')),
 
         }
         self.queue_requests = {
@@ -111,6 +112,10 @@ class Application(Frame, object):
         self.menu.add_command(label='Play', command=self.bot_control)
         master.config(menu=self.menu)
 
+
+        self.start_button = Button(self, image=self.icons[10], highlightbackground="white", command=self.start_button)
+        self.start_button.pack(expand=1)
+
         self._status_bar = StringVar()
         self.label = Label(master, textvariable=self._status_bar)
         self.label.pack()
@@ -135,15 +140,16 @@ class Application(Frame, object):
         self.weighted = IntVar(value=1)
         self.weighted_check = Checkbutton(self, text='Proportionally to length', variable=self.weighted,
                                           command=self._proportionally)
-        self.weighted_check.pack(side=RIGHT)
+        self.weighted_check.pack(side=RIGHT, in_=self.frame)
 
         self.show_weight = IntVar()
         self.show_weight_check = Checkbutton(self, text='Show length', variable=self.show_weight,
                                              command=self.show_weights)
-        self.show_weight_check.pack(side=RIGHT)
+        self.show_weight_check.pack(side=RIGHT, in_=self.frame)
 
         self.button = Button(self, image=self.icons[8], highlightbackground="white", command=self.bot_control)
-        self.button.pack(side=LEFT)
+        self.button.pack(side=LEFT, in_=self.frame)
+        self.button.lower(self.frame)
 
         self.pack(fill=BOTH, expand=True)
         self.set_status_bar('Click Play to start the game')
@@ -288,7 +294,6 @@ class Application(Frame, object):
     def open_server_settings(self):
         """Opens server settings window."""
         ServerSettings(self, title='Server settings')
-        self.button.configure(image=self.icons[8])
         self.set_status_bar('Click Play to start the game')
 
     def exit(self):
@@ -296,6 +301,18 @@ class Application(Frame, object):
         if self.bot_thread:
             self.bot_control()
         self.master.destroy()
+    
+    def start_button(self):
+        """Starts bot for playing the game or opens Server Settings"""
+        self.start_button.pack_forget()
+        self.canvas.delete(self.start_button)
+        if self.username :
+            self.button.lift(self.frame)
+            self.bot_control()
+        else:
+            self.open_server_settings()
+            self.button.lift(self.frame)
+            self.bot_control()
 
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
