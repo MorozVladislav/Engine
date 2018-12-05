@@ -20,10 +20,7 @@ def client_exceptions(func):
         try:
             return func(self, *args, **kwargs)
         except (ClientException, error, herror, gaierror, timeout) as exc:
-            if isinstance(exc, ClientException) or isinstance(exc, timeout):
-                message = exc.message
-            else:
-                message = exc.strerror
+            message = exc.message if exc.message != '' else exc.strerror
             self.refresh_status_bar('Error: {}'.format(message))
             raise exc
 
@@ -36,8 +33,7 @@ class Bot(object):
     def __init__(self):
         """Initiates bot."""
         self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
-        self.client = None
-        self.queue = Queue()
+        self.client, self.queue = None, None
         self.started = False
         self.lines, self.points, self.adjacencies = {}, {}, {}
         self.player_idx, self.town, self.idx, self.ratings, self.posts, self.trains = None, None, None, {}, {}, {}
@@ -113,15 +109,21 @@ class Bot(object):
         :param password: string - password
         """
         self.host, self.port, self.timeout, self.username, self.password = host, port, time_out, username, password
-        self.login()
-        self.build_map()
-        self.refresh_map()
-        self.create_adjacency_list()
-        self.started = True
-        while self.started:
-            route = self.get_route(1, 2)
-            self.move_train(1, route)
-        self.logout()
+        self.queue = Queue()
+        try:
+            self.login()
+            self.build_map()
+            self.refresh_map()
+            self.create_adjacency_list()
+            self.started = True
+            while self.started:
+                route = self.get_route(1, 2)
+                self.move_train(1, route)
+            self.queue = None
+            self.logout()
+        except Exception as exc:
+            self.queue.put((99, None))
+            raise exc
 
     def stop(self):
         """Stops bot."""
