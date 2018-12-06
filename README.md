@@ -13,12 +13,14 @@
 [Task 2](tasks/task_2.md)
 ### Мир огромный удивительный III
 [Task 3](tasks/task_3.md)
+### Стратегия модернизационная образцовая IV
+[Задание 4](tasks/task_4.md)
 
 ## Dependencies
 The application requires Python2.7 and pip installed. All the rest dependencies are indicated in requirements.txt
 
 ## How to run it
-You can execute 
+You can execute
   - bash run.sh
   - run.bat
   - or next commands:
