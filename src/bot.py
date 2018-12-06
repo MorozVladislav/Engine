@@ -229,7 +229,8 @@ class Bot(object):
             max_efficiency, route = -1 * float('inf'), None
             for post in target_posts:
                 trip_to, points_to = self.get_turn_points(train_idx, post['point_idx'])
-                trip_from, points_from = self.get_turn_points(train_idx, self.town['point_idx'], point_from=post['point_idx'])
+                trip_from, points_from = self.get_turn_points(train_idx, self.town['point_idx'],
+                                                              point_from=post['point_idx'])
                 if post != self.town:
                     post_goods = post['product'] if goods_type == 2 else post['armor']
                     post_capacity = post['product_capacity'] if goods_type == 2 else post['armor_capacity']

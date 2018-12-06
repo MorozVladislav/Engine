@@ -469,7 +469,7 @@ class Application(Frame, object):
         """Dequeues and executes requests. Assigns corresponding label to bot control button."""
         if self.bot_thread:
             if not self.bot.queue.empty():
-                request_type, request_body = self.bot.queue.get()
+                request_type, request_body = self.bot.queue.get_nowait()
                 if request_body:
                     self.queue_requests[request_type](request_body)
                 else:
