@@ -75,7 +75,11 @@ class Application(Frame, object):
             4: PhotoImage(file=join('icons', 'point.png')),
             5: PhotoImage(file=join('icons', 'player_train.png')),
             6: PhotoImage(file=join('icons', 'train.png')),
-            7: PhotoImage(file=join('icons', 'crashed_train.png'))
+            7: PhotoImage(file=join('icons', 'crashed_train.png')),
+            8: PhotoImage(file=join('icons', 'play.png')),
+            9: PhotoImage(file=join('icons', 'stop.png')),
+            10: PhotoImage(file=join('icons', 'big_play.png'))
+            
         }
         self.queue_requests = {
             0: self.set_status_bar,
@@ -106,7 +110,6 @@ class Application(Frame, object):
         filemenu.add_command(label='Server settings', command=self.open_server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
         self.menu.add_cascade(label='Menu', menu=filemenu)
-        self.menu.add_command(label='Play', command=self.bot_control)
         master.config(menu=self.menu)
 
         self._status_bar = StringVar()
@@ -133,14 +136,19 @@ class Application(Frame, object):
         self.weighted = IntVar(value=1)
         self.weighted_check = Checkbutton(self, text='Proportionally to length', variable=self.weighted,
                                           command=self._proportionally)
-        self.weighted_check.pack(side=LEFT)
+        self.weighted_check.pack(side=RIGHT, in_=self.frame)
 
         self.show_weight = IntVar()
         self.show_weight_check = Checkbutton(self, text='Show length', variable=self.show_weight,
                                              command=self.show_weights)
-        self.show_weight_check.pack(side=LEFT)
-        self.button = Button(self, image=self.icons[6], highlightbackground="white", command=self.bot_control)
-        self.button.pack(side=LEFT)
+        self.show_weight_check.pack(side=RIGHT, in_=self.frame)
+
+
+        self.start_button = Button(self, image=self.icons[10], highlightbackground="white", command=self.start_bot)
+        self.start_button.pack(expand=1, in_=self.canvas)
+        self.button = Button(self, image=self.icons[9], highlightbackground="white", command=self.bot_control)
+        self.button.pack(side=LEFT, in_=self.frame)
+        self.button.lower(self.frame)
 
         self.pack(fill=BOTH, expand=True)
         self.requests_executor()
@@ -287,8 +295,8 @@ class Application(Frame, object):
 
     def open_server_settings(self):
         """Opens server settings window."""
+        self.set_status_bar('Server settings')
         ServerSettings(self, title='Server settings')
-        self.button.configure(image=self.icons[6])
         self.set_status_bar('Click Play to start the game')
 
 
@@ -298,9 +306,19 @@ class Application(Frame, object):
             self.bot_control()
         self.master.destroy()
 
+    def start_bot(self):
+        """Starts bot or opens server settings if username is invalid."""
+        self.start_button.destroy()
+        if not self.username:
+            self.open_server_settings()
+        self.button.lift(self.frame)
+        self.bot_control()
+
+
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
         if not self.bot_thread:
+            self.button.configure(image=self.icons[9])
             self.bot_thread = Thread(target=self.bot.start, kwargs={
                 'host': self.host,
                 'port': self.port,
@@ -308,13 +326,14 @@ class Application(Frame, object):
                 'username': self.username,
                 'password': self.password})
             self.bot_thread.start()
-            if self.bot_thread:
-                self.button.configure(image=self.icons[7])
+            self.button.configure(image=self.icons[9])
+
         else:
-            self.button.configure(image=self.icons[6])
+            self.button.configure(image=self.icons[8])
             self.bot.stop()
             self.bot_thread.join()
             self.bot_thread = None
+            self.button.configure(image=self.icons[8])
 
     def set_status_bar(self, value):
         """Assigns new status bar value and updates it.
@@ -483,11 +502,9 @@ class Application(Frame, object):
                 else:
                     self.queue_requests[request_type]()
         if self.bot_thread and self.bot_thread.is_alive():
-            if self.menu.entrycget(5, 'label') == 'Play':
-                self.menu.entryconfigure(5, label='Stop')
+            self.button.configure(image=self.icons[9])
         else:
-            if self.menu.entrycget(5, 'label') == 'Stop':
-                self.menu.entryconfigure(5, label='Play')
+            self.button.configure(image=self.icons[8])
         self.after(50, self.requests_executor)
 
     def refresh_map(self, dynamic_objects):
