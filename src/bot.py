@@ -20,10 +20,7 @@ def client_exceptions(func):
         try:
             return func(self, *args, **kwargs)
         except (ClientException, error, herror, gaierror, timeout) as exc:
-            if isinstance(exc, ClientException) or isinstance(exc, timeout):
-                message = exc.message
-            else:
-                message = exc.strerror
+            message = exc.message if exc.message != '' else exc.strerror
             self.refresh_status_bar('Error: {}'.format(message))
             raise exc
 
@@ -36,8 +33,7 @@ class Bot(object):
     def __init__(self):
         """Initiates bot."""
         self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
-        self.client = None
-        self.queue = Queue()
+        self.client, self.queue = None, None
         self.started = False
         self.lines, self.points, self.adjacencies = {}, {}, {}
         self.player_idx, self.town, self.idx, self.ratings, self.posts, self.trains = None, None, None, {}, {}, {}
@@ -51,10 +47,24 @@ class Bot(object):
         self.queue.put((0, value))
 
     @client_exceptions
+    def login(self):
+        """Creates Client, sends log in request and displays username and rating in status bar."""
+        self.refresh_status_bar('Connecting...')
+        self.client = Client(host=self.host,
+                             port=self.port,
+                             timeout=self.timeout,
+                             username=self.username,
+                             password=self.password)
+        response = loads(self.client.login().data)
+        self.player_idx = response['idx']
+        self.queue.put((1, self.player_idx))
+        self.refresh_status_bar('{}: {}'.format(response['name'], response['rating']))
+
+    @client_exceptions
     def build_map(self):
         """Requests static objects and enqueues draw map request."""
         static_objects = self.client.get_static_objects().data
-        self.queue.put((1, static_objects))
+        self.queue.put((2, static_objects))
         static_objects = loads(static_objects)
         for point in static_objects['points']:
             self.points[point['idx']] = point
@@ -75,20 +85,7 @@ class Bot(object):
             self.trains[train['idx']] = train
         rating = '{}: {}'.format(self.ratings[self.player_idx]['name'], self.ratings[self.player_idx]['rating'])
         self.refresh_status_bar(rating)
-        self.queue.put((2, dynamic_objects))
-
-    @client_exceptions
-    def login(self):
-        """Creates Client, sends log in request and displays username and rating in status bar."""
-        self.refresh_status_bar('Connecting...')
-        self.client = Client(host=self.host,
-                             port=self.port,
-                             timeout=self.timeout,
-                             username=self.username,
-                             password=self.password)
-        response = loads(self.client.login().data)
-        self.player_idx = response['idx']
-        self.refresh_status_bar('{}: {}'.format(response['name'], response['rating']))
+        self.queue.put((3, dynamic_objects))
 
     @client_exceptions
     def logout(self):
@@ -112,15 +109,21 @@ class Bot(object):
         :param password: string - password
         """
         self.host, self.port, self.timeout, self.username, self.password = host, port, time_out, username, password
-        self.login()
-        self.build_map()
-        self.refresh_map()
-        self.create_adjacency_list()
-        self.started = True
-        while self.started:
-            route = self.get_route(1, 2)
-            self.move_train(1, route)
-        self.logout()
+        self.queue = Queue()
+        try:
+            self.login()
+            self.build_map()
+            self.refresh_map()
+            self.create_adjacency_list()
+            self.started = True
+            while self.started:
+                route = self.get_route(1, 2)
+                self.move_train(1, route)
+            self.queue = None
+            self.logout()
+        except Exception as exc:
+            self.queue.put((99, None))
+            raise exc
 
     def stop(self):
         """Stops bot."""
@@ -197,7 +200,7 @@ class Bot(object):
         :param point_from: int - point index to build way from, if None - the way builds from current point
         :return: list - list of turn points
         """
-        current_point = self.get_current_point(train_idx) if point_from is None else point_from
+        current_point = self.get_current_point(train_idx) if not point_from else point_from
         point_to = self.dijkstra_algorithm(current_point)
         turn_points = [target_point]
         if target_point != current_point:
