@@ -308,7 +308,7 @@ class Application(Frame, object):
                 'username': self.username,
                 'password': self.password})
             self.bot_thread.start()
-            if self.bot_thread and self.bot.started:
+            if self.bot_thread:
                 self.button.configure(image=self.icons[7])
         else:
             self.button.configure(image=self.icons[6])
