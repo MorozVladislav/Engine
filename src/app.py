@@ -75,17 +75,14 @@ class Application(Frame, object):
             4: PhotoImage(file=join('icons', 'point.png')),
             5: PhotoImage(file=join('icons', 'player_train.png')),
             6: PhotoImage(file=join('icons', 'train.png')),
-            7: PhotoImage(file=join('icons', 'crashed_train.png')),
-            8: PhotoImage(file=join('icons', 'play.png')),
-            9: PhotoImage(file=join('icons', 'stop.png')),
-            10: PhotoImage(file=join('icons', 'big_play.png')),
-
+            7: PhotoImage(file=join('icons', 'crashed_train.png'))
         }
         self.queue_requests = {
             0: self.set_status_bar,
             1: self.set_player_idx,
             2: self.build_map,
-            3: self.refresh_map
+            3: self.refresh_map,
+            99: self.bot_control
         }
 
         self.settings_window = None
@@ -108,7 +105,7 @@ class Application(Frame, object):
         filemenu.add_command(label='Open file', command=self.file_open)
         filemenu.add_command(label='Server settings', command=self.open_server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
-        self.menu.add_cascade(label='File', menu=filemenu)
+        self.menu.add_cascade(label='Menu', menu=filemenu)
         self.menu.add_command(label='Play', command=self.bot_control)
         master.config(menu=self.menu)
 
@@ -152,6 +149,7 @@ class Application(Frame, object):
         self.button.lower(self.frame)
 
         self.pack(fill=BOTH, expand=True)
+        self.requests_executor()
         self.set_status_bar('Click Play to start the game')
 
     @property
@@ -194,14 +192,15 @@ class Application(Frame, object):
         :return: None
         """
         if self.map:
-            if event.width > self.canvas.bbox('all')[2] and event.height > self.canvas.bbox('all')[3]:
-                self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
-                self.clear_map()
-                self.draw_map()
-            else:
-                self.redraw_map()
+            k = min(float(event.width) / float(self.x0 * 2), float(event.height) / float(self.y0 * 2))
+            self.scale_x, self.scale_y = self.scale_x * k, self.scale_y * k
+            self.x0, self.y0 = self.x0 * k, self.y0 * k
+            self.redraw_map()
             self.redraw_trains()
-            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+            x_start, y_start, x_end, y_end = self.canvas.bbox('all')
+            x_start = 0 if x_start > 0 else x_start
+            y_start = 0 if y_start > 0 else y_start
+            self.canvas.configure(scrollregion=(x_start, y_start, x_end, y_end))
 
     def _proportionally(self):
         """Rebuilds map and redraws trains."""
@@ -287,6 +286,7 @@ class Application(Frame, object):
         if path:
             if self.bot_thread:
                 self.bot_control()
+            self.posts, self.trains = {}, {}
             self.source = path.name
             self.weighted_check.configure(state=NORMAL)
             self.build_map()
@@ -317,26 +317,18 @@ class Application(Frame, object):
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
         if not self.bot_thread:
-            self.button.configure(image=self.icons[9])
             self.bot_thread = Thread(target=self.bot.start, kwargs={
                 'host': self.host,
                 'port': self.port,
                 'time_out': self.timeout,
                 'username': self.username,
                 'password': self.password})
-            self.requests_executor()
             self.bot_thread.start()
-            if self.bot_thread:
-                self.button.configure(image=self.icons[9])
         else:
             self.button.configure(image=self.icons[8])
             self.bot.stop()
             self.bot_thread.join()
             self.bot_thread = None
-            self.posts, self.trains = {}, {}
-            if not self.bot_thread:
-                self.button.configure(image=self.icons[8])
-
 
     def set_status_bar(self, value):
         """Assigns new status bar value and updates it.
@@ -376,6 +368,7 @@ class Application(Frame, object):
     def redraw_map(self):
         """Redraws existing map by existing coordinates."""
         if self.map:
+            self.coordinates = {}
             for obj_id in self.canvas_obj.line:
                 self.canvas.delete(obj_id)
             self.draw_lines()
@@ -498,15 +491,19 @@ class Application(Frame, object):
     def requests_executor(self):
         """Dequeues and executes requests. Assigns corresponding label to bot control button."""
         if self.bot_thread:
-            if self.menu.entrycget(5, 'label') == 'Play':
-                self.menu.entryconfigure(5, label='Stop')
             if not self.bot.queue.empty():
                 request_type, request_body = self.bot.queue.get()
-                self.queue_requests[request_type](request_body)
+                if request_body:
+                    self.queue_requests[request_type](request_body)
+                else:
+                    self.queue_requests[request_type]()
+        if self.bot_thread and self.bot_thread.is_alive():
+            if self.menu.entrycget(5, 'label') == 'Play':
+                self.menu.entryconfigure(5, label='Stop')
         else:
             if self.menu.entrycget(5, 'label') == 'Stop':
                 self.menu.entryconfigure(5, label='Play')
-        self.after(1, self.requests_executor)
+        self.after(50, self.requests_executor)
 
     def refresh_map(self, dynamic_objects):
         """Refreshes map with passed dynamic objects.
