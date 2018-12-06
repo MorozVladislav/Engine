@@ -145,7 +145,7 @@ class Bot(object):
         """Finds the shortest paths from the point to all other points.
 
         :param point: int - point index
-        :return: dictionary of shortest paths
+        :return: 2-tuple of dictionaries where the first one is shortest paths and the second one is distance of paths
         """
         point_to, dist_to, visited = {}, {}, {}
         for point_idx in self.adjacencies.keys():
@@ -160,7 +160,7 @@ class Bot(object):
                         point_to[point_idx] = closest_point
             visited[closest_point] = dist_to[closest_point]
             dist_to.pop(closest_point)
-        return point_to
+        return point_to, visited
 
     def move_train(self, idx, rote):
         """Moves train over a rote.
@@ -198,10 +198,11 @@ class Bot(object):
         :param train_idx: int - train index
         :param target_point: int - target point index
         :param point_from: int - point index to build way from, if None - the way builds from current point
-        :return: list - list of turn points
+        :return: return: 2-tuple where the first item is a trip length to the target point and the second item
+        is a list of turn points
         """
         current_point = self.get_current_point(train_idx) if not point_from else point_from
-        point_to = self.dijkstra_algorithm(current_point)
+        point_to, trip_to = self.dijkstra_algorithm(current_point)
         turn_points = [target_point]
         if target_point != current_point:
             temp_point = target_point
@@ -209,7 +210,7 @@ class Bot(object):
                 temp_point = point_to[temp_point]
                 turn_points.append(temp_point)
             turn_points.append(current_point)
-        return list(reversed(turn_points))
+        return trip_to[target_point], list(reversed(turn_points))
 
     def get_route(self, train_idx, goods_type):
         """Returns most profitable route for a train or returns closest route back to town if the train is full.
@@ -227,16 +228,8 @@ class Bot(object):
                     target_posts.append(post)
             max_efficiency, route = -1 * float('inf'), None
             for post in target_posts:
-                points_to = self.get_turn_points(train_idx, post['point_idx'])
-                points_from = self.get_turn_points(train_idx, self.town['point_idx'], point_from=post['point_idx'])
-                trip_to = 0
-                for i in xrange(len(points_to) - 1):
-                    line_idx = self.adjacencies[points_to[i]][points_to[i + 1]]
-                    trip_to += self.lines[line_idx]['length']
-                trip_from = 0
-                for i in xrange(len(points_from) - 1):
-                    line_idx = self.adjacencies[points_from[i]][points_from[i + 1]]
-                    trip_from += self.lines[line_idx]['length']
+                trip_to, points_to = self.get_turn_points(train_idx, post['point_idx'])
+                trip_from, points_from = self.get_turn_points(train_idx, self.town['point_idx'], point_from=post['point_idx'])
                 if post != self.town:
                     post_goods = post['product'] if goods_type == 2 else post['armor']
                     post_capacity = post['product_capacity'] if goods_type == 2 else post['armor_capacity']
@@ -254,4 +247,5 @@ class Bot(object):
                     max_efficiency = efficiency
                     route = points_to
             return route[:2]
-        return self.get_turn_points(train_idx, self.town['point_idx'])
+        trip_to, points_to = self.get_turn_points(train_idx, self.town['point_idx'])
+        return points_to
