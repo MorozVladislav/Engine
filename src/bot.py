@@ -10,7 +10,7 @@ from client import Client, ClientException
 
 
 def client_exceptions(func):
-    """Catches exceptions that can be thrown by Client and displays them in status bar.
+    """Catches exceptions can be thrown by Client and displays them in status bar.
 
     :param func: function - function that uses Client methods
     :return: wrapped function
@@ -40,9 +40,13 @@ class Bot(object):
         self.client = None
         self.queue = None
         self.started = False
+        self.current_tick = 0
+        self.last_events = {}
         self.lines = {}
         self.points = {}
-        self.adjacencies = {}
+        self.adjacent = {}
+        self.adjacent_no_markets = {}
+        self.adjacent_no_storages = {}
         self.player_idx = None
         self.town = None
         self.idx = None
@@ -53,7 +57,7 @@ class Bot(object):
     def refresh_status_bar(self, value):
         """Enqueues application status bar refresh request.
 
-        :param value: string - status string
+        :param value: string - status string to be displayed in status bar
         :return: None
         """
         self.queue.put((0, value))
@@ -82,22 +86,35 @@ class Bot(object):
             self.points[point['idx']] = point
         for line in static_objects['lines']:
             self.lines[line['idx']] = line
+        self.adjacent = self.get_adjacent()
 
     @client_exceptions
     def refresh_map(self):
         """Requests dynamic objects and enqueues refresh map request."""
         dynamic_objects = loads(self.client.get_dynamic_objects().data)
+        self.queue.put((3, dynamic_objects))
         self.idx = dynamic_objects['idx']
         self.ratings = dynamic_objects['ratings']
         for post in dynamic_objects['posts']:
             self.posts[post['point_idx']] = post
             if post['type'] == 1 and post['player_idx'] == self.player_idx:
                 self.town = post
+                for event in post['events']:
+                    if event['type'] == 100:
+                        self.stop()
+                        self.refresh_status_bar('Game over!')
+                        self.queue.put((99, None))
+                        return
+                    self.last_events[event['type']] = event['tick']
         for train in dynamic_objects['trains']:
             self.trains[train['idx']] = train
+        if not self.adjacent_no_markets or not self.adjacent_no_storages:
+            markets = [idx for idx, attrs in self.posts.items() if attrs['type'] == 2]
+            storages = [idx for idx, attrs in self.posts.items() if attrs['type'] == 3]
+            self.adjacent_no_markets = self.get_adjacent(exclude=markets)
+            self.adjacent_no_storages = self.get_adjacent(exclude=storages)
         rating = '{}: {}'.format(self.ratings[self.player_idx]['name'], self.ratings[self.player_idx]['rating'])
         self.refresh_status_bar(rating)
-        self.queue.put((3, dynamic_objects))
 
     @client_exceptions
     def logout(self):
@@ -106,8 +123,9 @@ class Bot(object):
 
     @client_exceptions
     def tick(self):
-        """Sends turn request and refreshes map."""
+        """Sends turn request, updates current tick number and refreshes map."""
         self.client.turn()
+        self.current_tick += 1
         self.refresh_map()
 
     def start(self, host=None, port=None, time_out=None, username=None, password=None):
@@ -125,7 +143,6 @@ class Bot(object):
             self.login()
             self.build_map()
             self.refresh_map()
-            self.create_adjacency_list()
             self.started = True
             while self.started:
                 route = self.get_route(1, 2)
@@ -140,30 +157,38 @@ class Bot(object):
         """Stops bot."""
         self.started = False
 
-    def create_adjacency_list(self):
-        """Creates new dict of adjacencies."""
-        self.adjacencies = {}
+    def get_adjacent(self, exclude=None):
+        """Returns new dict of adjacent points. Excludes points with indexes from exclude list.
+
+        :param exclude: list - points to be excluded from adjacent dict
+        :return: dict - dict of adjacent points
+        """
+        adjacent = {}
         for idx, attrs in self.lines.items():
             start_point, end_point = attrs['points'][0], attrs['points'][1]
-            if start_point not in self.adjacencies.keys():
-                self.adjacencies[start_point] = {}
-            if end_point not in self.adjacencies.keys():
-                self.adjacencies[end_point] = {}
-            self.adjacencies[start_point][end_point] = idx
-            self.adjacencies[end_point][start_point] = idx
+            if exclude and (start_point in exclude or end_point in exclude):
+                continue
+            if start_point not in adjacent.keys():
+                adjacent[start_point] = {}
+            if end_point not in adjacent.keys():
+                adjacent[end_point] = {}
+            adjacent[start_point][end_point] = idx
+            adjacent[end_point][start_point] = idx
+        return adjacent
 
-    def dijkstra_algorithm(self, point):
-        """Finds the shortest paths from the point to all other points.
+    def dijkstra_algorithm(self, point, adjacent):
+        """calculates shortest paths from the point to all other points.
 
         :param point: int - point index
+        :param adjacent: dict - dict of adjacent points
         :return: 2-tuple of dictionaries where the first one is shortest paths and the second one is distance of paths
         """
         point_to, dist_to, visited = {}, {}, {}
-        for point_idx in self.adjacencies.keys():
+        for point_idx in adjacent.keys():
             dist_to[point_idx] = float('inf') if point_idx != point else 0
         while dist_to:
             closest_point = min(dist_to, key=dist_to.get)
-            for point_idx, line_idx in self.adjacencies[closest_point].items():
+            for point_idx, line_idx in adjacent[closest_point].items():
                 if point_idx not in visited:
                     new_dist = dist_to[closest_point] + self.lines[line_idx]['length']
                     if new_dist < dist_to[point_idx]:
@@ -181,7 +206,7 @@ class Bot(object):
         :return: None
         """
         for i in xrange(len(rote) - 1):
-            line_idx = self.adjacencies[rote[i]][rote[i + 1]]
+            line_idx = self.adjacent[rote[i]][rote[i + 1]]
             direction = 1 if rote[i] == self.lines[line_idx]['points'][0] else -1
             self.client.move_train(line_idx, direction, idx)
             while rote[i + 1] != self.get_current_point(idx):
@@ -203,24 +228,23 @@ class Bot(object):
             current_point = self.lines[line]['points'][0] if position == 0 else self.lines[line]['points'][1]
         return current_point
 
-    def get_turn_points(self, train_idx, target_point, point_from=None):
+    def get_turn_points(self, point_from, target_point, adjacent):
         """Returns a list of turn points of the shortest way from current point to target point.
 
-        :param train_idx: int - train index
+        :param point_from: int - point index to build way from
         :param target_point: int - target point index
-        :param point_from: int - point index to build way from, if None - the way builds from current point
+        :param adjacent: dict - dict of adjacent points
         :return: return: 2-tuple where the first item is a trip length to the target point and the second item
         is a list of turn points
         """
-        current_point = self.get_current_point(train_idx) if not point_from else point_from
-        point_to, trip_to = self.dijkstra_algorithm(current_point)
+        point_to, trip_to = self.dijkstra_algorithm(point_from, adjacent)
         turn_points = [target_point]
-        if target_point != current_point:
+        if target_point != point_from:
             temp_point = target_point
-            while point_to[temp_point] != current_point:
+            while point_to[temp_point] != point_from:
                 temp_point = point_to[temp_point]
                 turn_points.append(temp_point)
-            turn_points.append(current_point)
+            turn_points.append(point_from)
         return trip_to[target_point], list(reversed(turn_points))
 
     def get_route(self, train_idx, goods_type):
@@ -231,17 +255,22 @@ class Bot(object):
         :return: int - target point
         """
         train = self.trains[train_idx]
+        current = self.get_current_point(train_idx)
         if train['goods'] < train['goods_capacity']:
             target_posts = []
-            current = self.get_current_point(train_idx)
             for post in self.posts.values():
                 if (post['type'] == goods_type or post['type'] == self.town['type']) and post['point_idx'] != current:
                     target_posts.append(post)
             max_efficiency, route = -1 * float('inf'), None
             for post in target_posts:
-                trip_to, points_to = self.get_turn_points(train_idx, post['point_idx'])
-                trip_from, points_from = self.get_turn_points(train_idx, self.town['point_idx'],
-                                                              point_from=post['point_idx'])
+                if train['goods'] == 0:
+                    if goods_type == 2:
+                        trip_to, points_to = self.get_turn_points(current, post['point_idx'], self.adjacent_no_storages)
+                    else:
+                        trip_to, points_to = self.get_turn_points(current, post['point_idx'], self.adjacent_no_markets)
+                else:
+                    trip_to, points_to = self.get_turn_points(current, post['point_idx'], self.adjacent)
+                trip_from, points_from = self.get_turn_points(post['point_idx'], self.town['point_idx'], self.adjacent)
                 if post != self.town:
                     post_goods = post['product'] if goods_type == 2 else post['armor']
                     post_capacity = post['product_capacity'] if goods_type == 2 else post['armor_capacity']
@@ -259,5 +288,8 @@ class Bot(object):
                     max_efficiency = efficiency
                     route = points_to
             return route[:2]
-        trip_to, points_to = self.get_turn_points(train_idx, self.town['point_idx'])
+        trip_to, points_to = self.get_turn_points(current, self.town['point_idx'], self.adjacent)
         return points_to
+
+    def resource_manager(self):
+        pass
