@@ -32,11 +32,23 @@ class Bot(object):
 
     def __init__(self):
         """Initiates bot."""
-        self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
-        self.client, self.queue = None, None
+        self.host = None
+        self.port = None
+        self.timeout = None
+        self.username = None
+        self.password = None
+        self.client = None
+        self.queue = None
         self.started = False
-        self.lines, self.points, self.adjacencies = {}, {}, {}
-        self.player_idx, self.town, self.idx, self.ratings, self.posts, self.trains = None, None, None, {}, {}, {}
+        self.lines = {}
+        self.points = {}
+        self.adjacencies = {}
+        self.player_idx = None
+        self.town = None
+        self.idx = None
+        self.ratings = {}
+        self.posts = {}
+        self.trains = {}
 
     def refresh_status_bar(self, value):
         """Enqueues application status bar refresh request.

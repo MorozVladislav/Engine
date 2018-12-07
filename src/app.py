@@ -63,9 +63,18 @@ class Application(Frame, object):
         self.master.geometry('{}x{}'.format(self.WIDTH, self.HEIGHT))
         self.master.protocol('WM_DELETE_WINDOW', self.exit)
 
-        self.source, self._map, self.points, self.lines, self.captured_point = None, None, None, None, None
-        self.x0, self.y0, self.scale_x, self.scale_y, self.font_size = None, None, None, None, None
-        self.coordinates, self.captured_lines = {}, {}
+        self.source = None
+        self._map = None
+        self.points = None
+        self.lines = None
+        self.captured_point = None
+        self.x0 = None
+        self.y0 = None
+        self.scale_x = None
+        self.scale_y = None
+        self.font_size = None
+        self.coordinates = {}
+        self.captured_lines = {}
         self.canvas_obj = AttrDict()
         self.icons = {
             0: PhotoImage(file=join('icons', 'player_city.png')),
@@ -96,7 +105,9 @@ class Application(Frame, object):
             self.password = None if not defaults.password else str(defaults.password)
         else:
             self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
-        self.player_idx, self.posts, self.trains = None, {}, {}
+        self.player_idx = None
+        self.posts = {}
+        self.trains = {}
         self.bot = Bot()
         self.bot_thread = None
 
