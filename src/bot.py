@@ -101,7 +101,7 @@ class Bot(object):
 
     @client_exceptions
     def logout(self):
-        """Sends log out request and resets internally used variables."""
+        """Sends log out request."""
         self.client.logout()
 
     @client_exceptions
