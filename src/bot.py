@@ -103,7 +103,6 @@ class Bot(object):
     def logout(self):
         """Sends log out request and resets internally used variables."""
         self.client.logout()
-        self.player_idx, self.idx, self.ratings, self.posts, self.trains = None, None, {}, {}, {}
 
     @client_exceptions
     def tick(self):
