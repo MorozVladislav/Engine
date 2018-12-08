@@ -287,7 +287,7 @@ class Bot(object):
                 if efficiency > max_efficiency:
                     max_efficiency = efficiency
                     route = points_to
-            return route[:2]
+            return route[:2] if goods_type == 2 else route
         trip_to, points_to = self.get_turn_points(current, self.town['point_idx'], self.adjacent)
         return points_to
 
