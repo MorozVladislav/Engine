@@ -53,6 +53,8 @@ class Bot(object):
         self.ratings = {}
         self.posts = {}
         self.trains = {}
+        self.target_posts = {}
+        self.expected_goods = {}
 
     def refresh_status_bar(self, value):
         """Enqueues application status bar refresh request.
@@ -105,7 +107,7 @@ class Bot(object):
                         self.refresh_status_bar('Game over!')
                         self.queue.put((99, None))
                         return
-                    self.last_events[event['type']] = event['tick']
+                    self.last_events[event['type']] = event
         for train in dynamic_objects['trains']:
             self.trains[train['idx']] = train
         if not self.adjacent_no_markets or not self.adjacent_no_storages:
@@ -127,6 +129,8 @@ class Bot(object):
         self.client.turn()
         self.current_tick += 1
         self.refresh_map()
+        for goods in self.expected_goods.values():
+            goods[2] -= 1
 
     def start(self, host=None, port=None, time_out=None, username=None, password=None):
         """Logs in and starts bot.
@@ -145,8 +149,7 @@ class Bot(object):
             self.refresh_map()
             self.started = True
             while self.started:
-                route = self.get_route(1, 2)
-                self.move_train(1, route)
+                self.resource_manager()
             self.queue = None
             self.logout()
         except Exception as exc:
@@ -177,7 +180,7 @@ class Bot(object):
         return adjacent
 
     def dijkstra_algorithm(self, point, adjacent):
-        """calculates shortest paths from the point to all other points.
+        """Calculates shortest paths from the point to all other points.
 
         :param point: int - point index
         :param adjacent: dict - dict of adjacent points
@@ -226,6 +229,8 @@ class Bot(object):
             current_point = self.lines[line]['points'][0] if speed >= 0 else self.lines[line]['points'][1]
         else:
             current_point = self.lines[line]['points'][0] if position == 0 else self.lines[line]['points'][1]
+        if self.target_posts and current_point == self.target_posts[idx]:
+            self.target_posts[idx] = None
         return current_point
 
     def get_turn_points(self, point_from, target_point, adjacent):
@@ -257,12 +262,15 @@ class Bot(object):
         train = self.trains[train_idx]
         current = self.get_current_point(train_idx)
         if train['goods'] < train['goods_capacity']:
-            target_posts = []
+            targets = []
             for post in self.posts.values():
-                if (post['type'] == goods_type or post['type'] == self.town['type']) and post['point_idx'] != current:
-                    target_posts.append(post)
-            max_efficiency, route = -1 * float('inf'), None
-            for post in target_posts:
+                idx, post_type = post['point_idx'], post['type']
+                if post_type == goods_type and idx not in self.target_posts.values() and idx != current:
+                    targets.append(post)
+                if current != self.town['point_idx']:
+                    targets.append(self.town)
+            max_efficiency, target, trip, income, route = -1 * float('inf'), None, None, None, None
+            for post in targets:
                 if train['goods'] == 0:
                     if goods_type == 2:
                         trip_to, points_to = self.get_turn_points(current, post['point_idx'], self.adjacent_no_storages)
@@ -281,15 +289,51 @@ class Bot(object):
                     if goods_type == 2:
                         efficiency = goods - (trip_to + trip_from) * self.town['population']
                     else:
-                        efficiency = goods
+                        efficiency = goods / (trip_to + trip_from) * self.town['population']
                 else:
-                    efficiency = train['goods'] - (trip_to + trip_from) * self.town['population']
+                    goods = train['goods']
+                    efficiency = goods - (trip_to + trip_from) * self.town['population']
                 if efficiency > max_efficiency:
                     max_efficiency = efficiency
+                    target = post['point_idx']
+                    trip = trip_to + trip_from
+                    income = goods
                     route = points_to
-            return route[:2] if goods_type == 2 else route
-        trip_to, points_to = self.get_turn_points(current, self.town['point_idx'], self.adjacent)
-        return points_to
+            self.target_posts[train_idx] = target
+            return trip, income, route
+        trip, route = self.get_turn_points(current, self.town['point_idx'], self.adjacent)
+        return trip, self.trains[train_idx]['goods'], route
 
     def resource_manager(self):
-        pass
+        """Assigns source type to be mined by each train."""
+        if 4 in self.last_events.keys():
+            next_refuges = 10 * self.last_events[4]['refugees_number'] + self.last_events[4]['tick'] - self.current_tick
+        else:
+            next_refuges = 10
+        for train in [train for train in self.trains.values() if train['player_idx'] == self.player_idx]:
+            if train['goods'] > 0:
+                trip, expected_goods, route = self.get_route(train['idx'], train['goods_type'])
+                self.expected_goods[train['idx']] = [train['goods_type'], expected_goods, trip]
+                if train['goods_type'] == 3 or train['goods'] == train['goods_capacity']:
+                    self.move_train(train['idx'], route)
+                else:
+                    self.move_train(train['idx'], route[:2])
+            else:
+                product_trip, product, product_route = self.get_route(train['idx'], 2)
+                armor_trip, armor, armor_route = self.get_route(train['idx'], 3)
+                product_inc, armor_inc = 0, 0
+                for idx, attrs in self.expected_goods.items():
+                    if idx == train['idx']:
+                        continue
+                    if attrs[0] == 2 and attrs[2] <= armor_trip:
+                        product_inc += attrs[1]
+                    if attrs[0] == 3 and attrs[2] <= armor_trip:
+                        armor_inc += attrs[1]
+                rest = self.town['product'] + product_inc - (armor_trip + product_trip) * self.town['population']
+                total_armor = self.town['armor'] + armor_inc
+                if armor > 0 and rest > 0 and total_armor < self.town['armor_capacity'] and next_refuges > armor_trip:
+                    self.expected_goods[train['idx']] = [3, armor, armor_trip]
+                    self.move_train(train['idx'], armor_route)
+                else:
+                    self.expected_goods[train['idx']] = [2, product, product_trip]
+                    self.move_train(train['idx'], product_route[:2])
