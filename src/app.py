@@ -84,7 +84,11 @@ class Application(Frame, object):
             4: PhotoImage(file=join('icons', 'point.png')),
             5: PhotoImage(file=join('icons', 'player_train.png')),
             6: PhotoImage(file=join('icons', 'train.png')),
-            7: PhotoImage(file=join('icons', 'crashed_train.png'))
+            7: PhotoImage(file=join('icons', 'crashed_train.png')),
+            8: PhotoImage(file=join('icons', 'play.png')),
+            9: PhotoImage(file=join('icons', 'play_pressed.png')),
+            10: PhotoImage(file=join('icons', 'stop.png')),
+            11: PhotoImage(file=join('icons', 'stop_pressed.png'))
         }
         self.queue_requests = {
             0: self.set_status_bar,
@@ -94,7 +98,7 @@ class Application(Frame, object):
             99: self.bot_control
         }
 
-        self.settings_window = None
+        self.settings_window, self.play_button, self.stop_button, self.captured_button = None, None, None, None
         if exists(expanduser(self.DEFAULTS)):
             with open(expanduser(self.DEFAULTS), 'r') as cfg:
                 defaults = DefaultsDict.from_yaml(cfg)
@@ -117,7 +121,6 @@ class Application(Frame, object):
         filemenu.add_command(label='Server settings', command=self.open_server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
         self.menu.add_cascade(label='Menu', menu=filemenu)
-        self.menu.add_command(label='Play', command=self.bot_control)
         master.config(menu=self.menu)
 
         self._status_bar = StringVar()
@@ -154,6 +157,7 @@ class Application(Frame, object):
         self.pack(fill=BOTH, expand=True)
         self.requests_executor()
         self.set_status_bar('Click Play to start the game')
+        self.draw_play_button()
 
     @property
     def map(self):
@@ -194,6 +198,12 @@ class Application(Frame, object):
         :param event: Tkinter.Event - Tkinter.Event instance for Configure event
         :return: None
         """
+        if self.play_button:
+            self.canvas.delete(self.play_button)
+            self.draw_play_button()
+        if self.stop_button:
+            self.canvas.delete(self.stop_button)
+            self.draw_stop_button()
         if self.map:
             k = min(float(event.width) / float(self.x0 * 2), float(event.height) / float(self.y0 * 2))
             self.scale_x, self.scale_y = self.scale_x * k, self.scale_y * k
@@ -221,6 +231,16 @@ class Application(Frame, object):
         if not obj_ids:
             return
         for obj_id in obj_ids:
+            if obj_id == self.play_button:
+                self.canvas.delete(self.play_button)
+                self.draw_play_button(pressed=True)
+                self.captured_button = self.play_button
+                return
+            if obj_id == self.stop_button:
+                self.canvas.delete(self.stop_button)
+                self.draw_stop_button(pressed=True)
+                self.captured_button = self.stop_button
+                return
             if obj_id in self.canvas_obj.point.keys():
                 self.captured_point = obj_id
                 point_idx = self.canvas_obj.point[obj_id]['idx']
@@ -239,6 +259,15 @@ class Application(Frame, object):
         :param event: Tkinter.Event - Tkinter.Event instance for ButtonRelease event
         :return: None
         """
+        if self.captured_button:
+            if self.captured_button == self.play_button:
+                self.canvas.delete(self.play_button)
+                self.draw_play_button()
+            else:
+                self.canvas.delete(self.stop_button)
+                self.draw_stop_button()
+            self.captured_button = None
+            self.bot_control()
         if self.captured_point:
             idx = self.canvas_obj.point[self.captured_point]['idx']
             x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
@@ -352,6 +381,7 @@ class Application(Frame, object):
         self.canvas.delete('all')
         self.scale_x, self.scale_y = None, None
         self.coordinates = {}
+        self.play_button, self.stop_button = None, None
 
     def redraw_map(self):
         """Redraws existing map by existing coordinates."""
@@ -486,11 +516,15 @@ class Application(Frame, object):
                 else:
                     self.queue_requests[request_type]()
         if self.bot_thread and self.bot_thread.is_alive():
-            if self.menu.entrycget(5, 'label') == 'Play':
-                self.menu.entryconfigure(5, label='Stop')
+            if self.play_button:
+                self.canvas.delete(self.play_button)
+                self.play_button = None
+                self.draw_stop_button()
         else:
-            if self.menu.entrycget(5, 'label') == 'Stop':
-                self.menu.entryconfigure(5, label='Play')
+            if self.stop_button:
+                self.canvas.delete(self.stop_button)
+                self.stop_button = None
+                self.draw_play_button()
         self.after(50, self.requests_executor)
 
     def refresh_map(self, dynamic_objects):
@@ -505,6 +539,32 @@ class Application(Frame, object):
             self.trains[train['idx']] = train
         self.redraw_points()
         self.redraw_trains()
+        if not self.stop_button:
+            self.draw_stop_button()
+
+    def draw_play_button(self, pressed=False):
+        """Draws play button icon. If pressed is True draws pressed play button icon.
+
+        :param pressed: bool - draws pressed button icon if true
+        :return: None
+        """
+        image = self.icons[9] if pressed else self.icons[8]
+        x, y = self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2
+        self.play_button = self.canvas.create_image(x, y, image=image)
+        if self.captured_button:
+            self.captured_button = self.play_button
+
+    def draw_stop_button(self, pressed=False):
+        """Draws stop button icon. If pressed is True draws pressed stop button icon.
+
+        :param pressed: bool - draws pressed button icon if true
+        :return: None
+        """
+        image = self.icons[11] if pressed else self.icons[10]
+        x, y = self.canvas.winfo_width() - 21, self.canvas.winfo_height() - 21
+        self.stop_button = self.canvas.create_image(x, y, image=image)
+        if self.captured_button:
+            self.captured_button = self.stop_button
 
 
 class ServerSettings(tkSimpleDialog.Dialog, object):
