@@ -3,7 +3,7 @@
 """The module implements GUI of the game."""
 import tkFileDialog
 import tkSimpleDialog
-from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
+from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry, Button
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, X, Y
 from functools import wraps
 from os.path import expanduser, exists
@@ -84,27 +84,36 @@ class Application(Frame, object):
             4: PhotoImage(file=join('icons', 'point.png')),
             5: PhotoImage(file=join('icons', 'player_train.png')),
             6: PhotoImage(file=join('icons', 'train.png')),
-            7: PhotoImage(file=join('icons', 'crashed_train.png'))
+            7: PhotoImage(file=join('icons', 'crashed_train.png')),
+            8: PhotoImage(file=join('icons', 'play.png')),
+            9: PhotoImage(file=join('icons', 'stop.png')),
+            10: PhotoImage(file=join('icons', 'big_play.png'))
         }
         self.queue_requests = {
             0: self.set_status_bar,
             1: self.set_player_idx,
             2: self.build_map,
             3: self.refresh_map,
-            99: self.bot_control
+            98: self.start_bot,
+            99: self.stop_bot
         }
 
         self.settings_window = None
+        self.defaults = None
         if exists(expanduser(self.DEFAULTS)):
             with open(expanduser(self.DEFAULTS), 'r') as cfg:
-                defaults = DefaultsDict.from_yaml(cfg)
-            self.host = None if not defaults.host else str(defaults.host)
-            self.port = None if not defaults.port else int(defaults.port)
-            self.timeout = None if not defaults.timeout else int(defaults.timeout)
-            self.username = None if not defaults.username else str(defaults.username)
-            self.password = None if not defaults.password else str(defaults.password)
-        else:
-            self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
+                self.defaults = DefaultsDict.from_yaml(cfg)
+
+        self.user_info = [None]*5
+        if self.defaults:
+            self.user_info = {
+                'host': None if not self.defaults.host else str(self.defaults.host),
+                'port': None if not self.defaults.port else int(self.defaults.port),
+                'username': None if not self.defaults.username else str(self.defaults.username),
+                'password': None if not self.defaults.password else str(self.defaults.password),
+                'timeout': None if not self.defaults.timeout else int(self.defaults.timeout)
+            }
+
         self.player_idx = None
         self.posts = {}
         self.trains = {}
@@ -117,7 +126,6 @@ class Application(Frame, object):
         filemenu.add_command(label='Server settings', command=self.open_server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
         self.menu.add_cascade(label='Menu', menu=filemenu)
-        self.menu.add_command(label='Play', command=self.bot_control)
         master.config(menu=self.menu)
 
         self._status_bar = StringVar()
@@ -144,12 +152,18 @@ class Application(Frame, object):
         self.weighted = IntVar(value=1)
         self.weighted_check = Checkbutton(self, text='Proportionally to length', variable=self.weighted,
                                           command=self._proportionally)
-        self.weighted_check.pack(side=LEFT)
+        self.weighted_check.pack(side=RIGHT, in_=self.frame)
 
         self.show_weight = IntVar()
         self.show_weight_check = Checkbutton(self, text='Show length', variable=self.show_weight,
                                              command=self.show_weights)
-        self.show_weight_check.pack(side=LEFT)
+        self.show_weight_check.pack(side=RIGHT, in_=self.frame)
+
+        self.start_button = Button(self, image=self.icons[10], highlightbackground="white", command=self.start_game)
+        self.start_button.pack(expand=1, in_=self.canvas)
+        self.button = Button(self, image=self.icons[9], highlightbackground="white", command=self.bot_control)
+        self.button.pack(side=LEFT, in_=self.frame)
+        self.button.lower(self.frame)
 
         self.pack(fill=BOTH, expand=True)
         self.requests_executor()
@@ -288,7 +302,7 @@ class Application(Frame, object):
         path = tkFileDialog.askopenfile(parent=self.master, **self.FILE_OPEN_OPTIONS)
         if path:
             if self.bot_thread:
-                self.bot_control()
+                self.stop_bot()
             self.posts, self.trains = {}, {}
             self.source = path.name
             self.weighted_check.configure(state=NORMAL)
@@ -296,28 +310,46 @@ class Application(Frame, object):
 
     def open_server_settings(self):
         """Opens server settings window."""
+        self.set_status_bar('Server settings')
         ServerSettings(self, title='Server settings')
 
     def exit(self):
         """Closes application and stops bot if its started."""
         if self.bot_thread:
-            self.bot_control()
+            self.stop_bot()
         self.master.destroy()
+
+    def start_game(self):
+        """Starts bot or opens server settings if settings are invalid."""
+        self.start_button.destroy()
+        if None in self.user_info.values():
+            self.open_server_settings()
+        self.set_status_bar('Click play to start the game')
+        self.button.lift(self.frame)
+        self.button.configure(image=self.icons[8])
+
+    def start_bot(self):
+        """Starts bot"""
+        self.bot_thread = Thread(target=self.bot.start, kwargs={
+                                'host': self.user_info['host'],
+                                'port': self.user_info['port'],
+                                'time_out': self.user_info['timeout'],
+                                'username': self.user_info['username'],
+                                'password': self.user_info['password']})
+        self.bot_thread.start()
+
+    def stop_bot(self):
+        """Stops bot"""
+        self.bot.stop()
+        self.bot_thread.join()
+        self.bot_thread = None
 
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
-        if not self.bot_thread:
-            self.bot_thread = Thread(target=self.bot.start, kwargs={
-                'host': self.host,
-                'port': self.port,
-                'time_out': self.timeout,
-                'username': self.username,
-                'password': self.password})
-            self.bot_thread.start()
+        if self.bot_thread:
+            self.stop_bot()
         else:
-            self.bot.stop()
-            self.bot_thread.join()
-            self.bot_thread = None
+            self.start_bot()
 
     def set_status_bar(self, value):
         """Assigns new status bar value and updates it.
@@ -483,14 +515,15 @@ class Application(Frame, object):
                 request_type, request_body = self.bot.queue.get_nowait()
                 if request_body:
                     self.queue_requests[request_type](request_body)
+                    if 'Error' in request_body:
+                        self.set_status_bar('Check your internet connection: ')
+                        self.stop_bot()
                 else:
                     self.queue_requests[request_type]()
         if self.bot_thread and self.bot_thread.is_alive():
-            if self.menu.entrycget(5, 'label') == 'Play':
-                self.menu.entryconfigure(5, label='Stop')
+            self.button.configure(image=self.icons[9])
         else:
-            if self.menu.entrycget(5, 'label') == 'Stop':
-                self.menu.entryconfigure(5, label='Play')
+            self.button.configure(image=self.icons[8])
         self.after(50, self.requests_executor)
 
     def refresh_map(self, dynamic_objects):
@@ -526,7 +559,8 @@ class ServerSettings(tkSimpleDialog.Dialog, object):
         :return: Entry instance
         """
         self.resizable(False, False)
-        settings = [self.parent.host, self.parent.port, self.parent.username, self.parent.password]
+        settings = [self.parent.user_info['host'], self.parent.user_info['port'], 
+                    self.parent.user_info['username'], self.parent.user_info['password']]
         Label(master, text="Host:").grid(row=0, sticky='W')
         Label(master, text="Port:").grid(row=1, sticky='W')
         Label(master, text="Player name:").grid(row=2, sticky='W')
@@ -543,4 +577,7 @@ class ServerSettings(tkSimpleDialog.Dialog, object):
         settings = []
         for entry in self.entries:
             settings.append(str(entry.get()) if entry.get() != '' else None)
-        self.parent.host, self.parent.port, self.parent.username, self.parent.password = settings
+        self.parent.user_info['host'] = settings[0]
+        self.parent.user_info['port'] = settings[1]
+        self.parent.user_info['username'] = settings[2]
+        self.parent.user_info['password'] = settings[3]

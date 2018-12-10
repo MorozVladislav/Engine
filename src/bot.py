@@ -133,12 +133,16 @@ class Bot(object):
             self.queue = None
             self.logout()
         except Exception as exc:
-            self.queue.put((99, None))
+            self.queue.put((98, None))
             raise exc
 
     def stop(self):
         """Stops bot."""
-        self.started = False
+        try:
+            self.started = False
+        except Exception as exc:
+            self.queue.put((99, None))
+            raise exc
 
     def create_adjacency_list(self):
         """Creates new dict of adjacencies."""
