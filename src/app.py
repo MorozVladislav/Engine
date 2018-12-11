@@ -85,10 +85,11 @@ class Application(Frame, object):
             5: PhotoImage(file=join('icons', 'player_train.png')),
             6: PhotoImage(file=join('icons', 'train.png')),
             7: PhotoImage(file=join('icons', 'crashed_train.png')),
-            8: PhotoImage(file=join('icons', 'play.png')),
-            9: PhotoImage(file=join('icons', 'play_pressed.png')),
-            10: PhotoImage(file=join('icons', 'stop.png')),
-            11: PhotoImage(file=join('icons', 'stop_pressed.png'))
+            8: PhotoImage(file=join('icons', 'collision.png')),
+            9: PhotoImage(file=join('icons', 'play.png')),
+            10: PhotoImage(file=join('icons', 'play_pressed.png')),
+            11: PhotoImage(file=join('icons', 'stop.png')),
+            12: PhotoImage(file=join('icons', 'stop_pressed.png'))
         }
         self.queue_requests = {
             0: self.set_status_bar,
@@ -143,11 +144,11 @@ class Application(Frame, object):
         self.canvas.config(xscrollcommand=hbar.set, yscrollcommand=vbar.set)
         self.canvas.pack(fill=BOTH, expand=True)
         self.play = Label(self.canvas, bg='white')
-        self.play.configure(image=self.icons[8])
+        self.play.configure(image=self.icons[9])
         self.play.bind('<Button-1>', self._play_press)
         self.play.bind('<B1-ButtonRelease>', self._play_release)
         self.stop = Label(self.canvas, bg='white')
-        self.stop.configure(image=self.icons[10])
+        self.stop.configure(image=self.icons[11])
         self.stop.bind('<Button-1>', self._stop_press)
         self.stop.bind('<B1-ButtonRelease>', self._stop_release)
         self.frame.pack(fill=BOTH, expand=True)
@@ -293,20 +294,20 @@ class Application(Frame, object):
 
     def _play_press(self, _):
         """Draws play button pressed icon."""
-        self.play.configure(image=self.icons[9])
+        self.play.configure(image=self.icons[10])
 
     def _play_release(self, _):
         """Draws play button icon and calls bot_control method."""
-        self.play.configure(image=self.icons[8])
+        self.play.configure(image=self.icons[9])
         self.bot_control()
 
     def _stop_press(self, _):
         """Draws stop button pressed icon."""
-        self.stop.configure(image=self.icons[11])
+        self.stop.configure(image=self.icons[12])
 
     def _stop_release(self, _):
         """Draws stop buton icon and calls bot_control method."""
-        self.stop.configure(image=self.icons[10])
+        self.stop.configure(image=self.icons[11])
         self.bot_control()
 
     def set_player_idx(self, value):
@@ -511,6 +512,9 @@ class Application(Frame, object):
         if self.bot_thread:
             if not self.bot.queue.empty():
                 request_type, request_body = self.bot.queue.get_nowait()
+                if request_type == 99 and request_body:
+                    self.open_server_settings()
+                    request_body = None
                 if request_body:
                     self.queue_requests[request_type](request_body)
                 else:

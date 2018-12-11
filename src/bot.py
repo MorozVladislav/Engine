@@ -133,7 +133,7 @@ class Bot(object):
             self.queue = None
             self.logout()
         except Exception as exc:
-            self.queue.put((99, None))
+            self.queue.put((99, exc))
             raise exc
 
     def stop(self):
@@ -227,8 +227,8 @@ class Bot(object):
         """Returns most profitable route for a train or returns closest route back to town if the train is full.
 
         :param train_idx: int - train index
-        :param goods_type: int - train index
-        :return: int - target point
+        :param goods_type: int - type of goods to be mined
+        :return: list - list of points to be passed when moving from current point to target point
         """
         train = self.trains[train_idx]
         if train['goods'] < train['goods_capacity']:
