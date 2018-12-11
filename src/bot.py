@@ -267,8 +267,8 @@ class Bot(object):
                 idx, post_type = post['point_idx'], post['type']
                 if post_type == goods_type and idx not in self.target_posts.values() and idx != current:
                     targets.append(post)
-                if current != self.town['point_idx']:
-                    targets.append(self.town)
+            if current != self.town['point_idx']:
+                targets.append(self.town)
             max_efficiency, target, trip, income, route = -1 * float('inf'), None, None, None, None
             for post in targets:
                 if train['goods'] == 0:
