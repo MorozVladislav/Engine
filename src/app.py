@@ -4,7 +4,7 @@
 import tkFileDialog
 import tkSimpleDialog
 from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
-from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, X, Y
+from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, CENTER, SE, X, Y
 from functools import wraps
 from os.path import expanduser, exists
 from os.path import join
@@ -26,7 +26,7 @@ def prepare_coordinates(func):
     """
     @wraps(func)
     def wrapped(self, *args, **kwargs):
-        if self.scale_x is None or self.scale_y is None:
+        if not self.scale_x or not self.scale_y:
             indent_x = max([icon.width() for icon in self.icons.values()]) + 5
             indent_y = max([icon.height() for icon in self.icons.values()]) + self.font_size + 5
             self.scale_x = int((self.x0 - indent_x) / max([abs(point['x']) for point in self.points.values()]))
@@ -63,37 +63,56 @@ class Application(Frame, object):
         self.master.geometry('{}x{}'.format(self.WIDTH, self.HEIGHT))
         self.master.protocol('WM_DELETE_WINDOW', self.exit)
 
-        self.source, self._map, self.points, self.lines, self.captured_point = None, None, None, None, None
-        self.x0, self.y0, self.scale_x, self.scale_y, self.font_size = None, None, None, None, None
-        self.coordinates, self.captured_lines = {}, {}
+        self.source = None
+        self._map = None
+        self.points = None
+        self.lines = None
+        self.captured_point = None
+        self.x0 = None
+        self.y0 = None
+        self.scale_x = None
+        self.scale_y = None
+        self.font_size = None
+        self.coordinates = {}
+        self.captured_lines = {}
         self.canvas_obj = AttrDict()
         self.icons = {
-            0: PhotoImage(file=join('icons', 'user_city.png')),
+            0: PhotoImage(file=join('icons', 'player_city.png')),
             1: PhotoImage(file=join('icons', 'city.png')),
             2: PhotoImage(file=join('icons', 'market.png')),
             3: PhotoImage(file=join('icons', 'store.png')),
-            4: PhotoImage(file=join('icons', 'train.png')),
-            5: PhotoImage(file=join('icons', 'point.png'))
+            4: PhotoImage(file=join('icons', 'point.png')),
+            5: PhotoImage(file=join('icons', 'player_train.png')),
+            6: PhotoImage(file=join('icons', 'train.png')),
+            7: PhotoImage(file=join('icons', 'crashed_train.png')),
+            8: PhotoImage(file=join('icons', 'collision.png')),
+            9: PhotoImage(file=join('icons', 'play.png')),
+            10: PhotoImage(file=join('icons', 'play_pressed.png')),
+            11: PhotoImage(file=join('icons', 'stop.png')),
+            12: PhotoImage(file=join('icons', 'stop_pressed.png'))
         }
         self.queue_requests = {
             0: self.set_status_bar,
-            1: self.build_map,
-            2: self.refresh_map
+            1: self.set_player_idx,
+            2: self.build_map,
+            3: self.refresh_map,
+            99: self.bot_control
         }
 
         self.settings_window = None
         if exists(expanduser(self.DEFAULTS)):
             with open(expanduser(self.DEFAULTS), 'r') as cfg:
                 defaults = DefaultsDict.from_yaml(cfg)
-            self.host = None if defaults.host is None else str(defaults.host)
-            self.port = None if defaults.port is None else int(defaults.port)
-            self.timeout = None if defaults.timeout is None else int(defaults.timeout)
-            self.username = None if defaults.username is None else str(defaults.username)
-            self.password = None if defaults.password is None else str(defaults.password)
+            self.host = None if not defaults.host else str(defaults.host)
+            self.port = None if not defaults.port else int(defaults.port)
+            self.timeout = None if not defaults.timeout else int(defaults.timeout)
+            self.username = None if not defaults.username else str(defaults.username)
+            self.password = None if not defaults.password else str(defaults.password)
         else:
             self.host, self.port, self.timeout, self.username, self.password = None, None, None, None, None
-
-        self.posts, self.trains = {}, {}
+        self.player_idx = None
+        self.posts = {}
+        self.trains = {}
         self.bot = Bot()
         self.bot_thread = None
 
@@ -102,8 +121,7 @@ class Application(Frame, object):
         filemenu.add_command(label='Open file', command=self.file_open)
         filemenu.add_command(label='Server settings', command=self.open_server_settings)
         filemenu.add_command(label='Exit', command=self.exit)
-        self.menu.add_cascade(label='File', menu=filemenu)
-        self.menu.add_command(label='Play', command=self.bot_control)
+        self.menu.add_cascade(label='Menu', menu=filemenu)
         master.config(menu=self.menu)
 
         self._status_bar = StringVar()
@@ -125,20 +143,30 @@ class Application(Frame, object):
         vbar.config(command=self.canvas.yview)
         self.canvas.config(xscrollcommand=hbar.set, yscrollcommand=vbar.set)
         self.canvas.pack(fill=BOTH, expand=True)
+        self.play = Label(self.canvas, bg='white')
+        self.play.configure(image=self.icons[9])
+        self.play.bind('<Button-1>', self._play_press)
+        self.play.bind('<B1-ButtonRelease>', self._play_release)
+        self.stop = Label(self.canvas, bg='white')
+        self.stop.configure(image=self.icons[11])
+        self.stop.bind('<Button-1>', self._stop_press)
+        self.stop.bind('<B1-ButtonRelease>', self._stop_release)
         self.frame.pack(fill=BOTH, expand=True)
 
         self.weighted = IntVar(value=1)
-        self.weighted_check = Checkbutton(self, text='Proportionally to weight', variable=self.weighted,
+        self.weighted_check = Checkbutton(self, text='Proportionally to length', variable=self.weighted,
                                           command=self._proportionally)
         self.weighted_check.pack(side=LEFT)
 
         self.show_weight = IntVar()
-        self.show_weight_check = Checkbutton(self, text='Show weight', variable=self.show_weight,
+        self.show_weight_check = Checkbutton(self, text='Show length', variable=self.show_weight,
                                              command=self.show_weights)
         self.show_weight_check.pack(side=LEFT)
 
         self.pack(fill=BOTH, expand=True)
+        self.requests_executor()
         self.set_status_bar('Click Play to start the game')
+        self.play.place(rely=0.5, relx=0.5, anchor=CENTER)
 
     @property
     def map(self):
@@ -179,15 +207,16 @@ class Application(Frame, object):
         :param event: Tkinter.Event - Tkinter.Event instance for Configure event
         :return: None
         """
-        if self.map is not None:
-            if event.width > self.canvas.bbox('all')[2] and event.height > self.canvas.bbox('all')[3]:
-                self.x0, self.y0 = int(event.width / 2), int(event.height / 2)
-                self.clear_map()
-                self.draw_map()
-            else:
-                self.redraw_map()
-            self.draw_trains()
-            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+        if self.map:
+            k = min(float(event.width) / float(self.x0 * 2), float(event.height) / float(self.y0 * 2))
+            self.scale_x, self.scale_y = self.scale_x * k, self.scale_y * k
+            self.x0, self.y0 = self.x0 * k, self.y0 * k
+            self.redraw_map()
+            self.redraw_trains()
+            x_start, y_start, x_end, y_end = self.canvas.bbox('all')
+            x_start = 0 if x_start > 0 else x_start
+            y_start = 0 if y_start > 0 else y_start
+            self.canvas.configure(scrollregion=(x_start, y_start, x_end, y_end))
 
     def _proportionally(self):
         """Rebuilds map and redraws trains."""
@@ -242,7 +271,7 @@ class Application(Frame, object):
             new_x, new_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
             self.canvas.coords(self.captured_point, new_x, new_y)
             indent_y = self.icons[self.canvas_obj.point[self.captured_point]['icon']].height() / 2 + self.font_size
-            if self.canvas_obj.point[self.captured_point]['text_obj'] is not None:
+            if self.canvas_obj.point[self.captured_point]['text_obj']:
                 self.canvas.coords(self.canvas_obj.point[self.captured_point]['text_obj'], new_x, new_y - indent_y)
             self.coordinates[self.canvas_obj.point[self.captured_point]['idx']] = (new_x, new_y)
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
@@ -263,12 +292,35 @@ class Application(Frame, object):
 
             self.redraw_trains()
 
+    def _play_press(self, _):
+        """Draws play button pressed icon."""
+        self.play.configure(image=self.icons[10])
+
+    def _play_release(self, _):
+        """Draws play button icon and calls bot_control method."""
+        self.play.configure(image=self.icons[9])
+        self.bot_control()
+
+    def _stop_press(self, _):
+        """Draws stop button pressed icon."""
+        self.stop.configure(image=self.icons[12])
+
+    def _stop_release(self, _):
+        """Draws stop buton icon and calls bot_control method."""
+        self.stop.configure(image=self.icons[11])
+        self.bot_control()
+
+    def set_player_idx(self, value):
+        """Sets a player idx value."""
+        self.player_idx = value
+
     def file_open(self):
         """Opens file dialog and builds and draws a map once a file is chosen. Stops bot if its started."""
         path = tkFileDialog.askopenfile(parent=self.master, **self.FILE_OPEN_OPTIONS)
         if path:
-            if self.bot.started:
+            if self.bot_thread:
                 self.bot_control()
+            self.posts, self.trains = {}, {}
             self.source = path.name
             self.weighted_check.configure(state=NORMAL)
             self.build_map()
@@ -279,29 +331,24 @@ class Application(Frame, object):
 
     def exit(self):
         """Closes application and stops bot if its started."""
-        if self.bot.started:
+        if self.bot_thread:
             self.bot_control()
         self.master.destroy()
 
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
-        if not self.bot.started:
+        if not self.bot_thread:
             self.bot_thread = Thread(target=self.bot.start, kwargs={
                 'host': self.host,
                 'port': self.port,
                 'time_out': self.timeout,
                 'username': self.username,
                 'password': self.password})
-            self.requests_executor()
             self.bot_thread.start()
-            if self.bot.started:
-                self.menu.entryconfigure(5, label='Stop')
         else:
             self.bot.stop()
             self.bot_thread.join()
-            self.posts, self.trains = {}, {}
-            if not self.bot.started:
-                self.menu.entryconfigure(5, label='Play')
+            self.bot_thread = None
 
     def set_status_bar(self, value):
         """Assigns new status bar value and updates it.
@@ -318,9 +365,9 @@ class Application(Frame, object):
         :param source: string - source string; could be JSON string or path to *.json file.
         :return: None
         """
-        if source is not None:
+        if source:
             self.source = source
-        if self.source is not None:
+        if self.source:
             self.map = Graph(self.source, weighted=self.weighted.get())
             self.set_status_bar('Map title: {}'.format(self.map.name))
             self.points, self.lines = self.map.get_coordinates()
@@ -340,6 +387,7 @@ class Application(Frame, object):
     def redraw_map(self):
         """Redraws existing map by existing coordinates."""
         if self.map:
+            self.coordinates = {}
             for obj_id in self.canvas_obj.line:
                 self.canvas.delete(obj_id)
             self.draw_lines()
@@ -349,7 +397,7 @@ class Application(Frame, object):
         """Redraws map points by existing coordinates."""
         if self.map:
             for obj_id, attrs in self.canvas_obj.point.items():
-                if attrs['text_obj'] is not None:
+                if attrs['text_obj']:
                     self.canvas.delete(attrs['text_obj'])
                 self.canvas.delete(obj_id)
             self.draw_points()
@@ -382,12 +430,12 @@ class Application(Frame, object):
                     status = '{}/{}'.format(self.posts[idx]['product'], self.posts[idx]['product_capacity'])
                 else:
                     status = '{}/{}'.format(self.posts[idx]['armor'], self.posts[idx]['armor_capacity'])
-                image_id = 0 if post_type == 1 and self.posts[idx]['player_idx'] == self.bot.player_idx else post_type
+                image_id = 0 if post_type == 1 and self.posts[idx]['player_idx'] == self.player_idx else post_type
                 point_id = self.canvas.create_image(x, y, image=self.icons[image_id])
                 y -= (self.icons[post_type].height() / 2) + self.font_size
                 text_id = self.canvas.create_text(x, y, text=status, font="{} {}".format(self.FONT, self.font_size))
             else:
-                post_type = 5
+                post_type = 4
                 point_id = self.canvas.create_image(x, y, image=self.icons[post_type])
                 text_id = None
             point_objs[point_id] = {'idx': idx, 'text_obj': text_id, 'icon': post_type}
@@ -424,9 +472,10 @@ class Application(Frame, object):
             x_start, y_start = self.coordinates[start_point]
             x_end, y_end = self.coordinates[end_point]
             delta_x, delta_y = int((x_start - x_end) / weight) * position, int((y_start - y_end) / weight) * position
-            indent_y = self.icons[4].height() / 2
             x, y = x_start - delta_x, y_start - delta_y
-            train_id = self.canvas.create_image(x, y - indent_y, image=self.icons[4])
+            image = self.icons[5] if train['player_idx'] == self.player_idx else self.icons[6]
+            indent_y = image.height() / 2
+            train_id = self.canvas.create_image(x, y - indent_y, image=image)
             status = '{}/{}'.format(train['goods'], train['goods_capacity'])
             text_id = self.canvas.create_text(x, y - (2 * indent_y + self.font_size), text=status,
                                               font="{} {}".format(self.FONT, self.font_size))
@@ -459,11 +508,26 @@ class Application(Frame, object):
                         self.canvas.itemconfigure(obj, state='hidden')
 
     def requests_executor(self):
-        """Dequeues and executes requests."""
-        if self.bot_thread.is_alive() and not self.bot.queue.empty():
-            request_type, request_body = self.bot.queue.get()
-            self.queue_requests[request_type](request_body)
-        self.after(1, self.requests_executor)
+        """Dequeues and executes requests. Assigns corresponding label to bot control button."""
+        if self.bot_thread:
+            if not self.bot.queue.empty():
+                request_type, request_body = self.bot.queue.get_nowait()
+                if request_type == 99 and request_body:
+                    self.open_server_settings()
+                    request_body = None
+                if request_body:
+                    self.queue_requests[request_type](request_body)
+                else:
+                    self.queue_requests[request_type]()
+        if self.bot_thread and self.bot_thread.is_alive():
+            if self.play.place_info():
+                self.play.place_forget()
+                self.stop.place(rely=0.99, relx=0.995, anchor=SE)
+        else:
+            if self.stop.place_info():
+                self.stop.place_forget()
+                self.play.place(rely=0.5, relx=0.5, anchor=CENTER)
+        self.after(50, self.requests_executor)
 
     def refresh_map(self, dynamic_objects):
         """Refreshes map with passed dynamic objects.
@@ -506,7 +570,7 @@ class ServerSettings(tkSimpleDialog.Dialog, object):
         for i in xrange(4):
             self.entries.append(Entry(master))
             setting = settings[i]
-            self.entries[i].insert(END, setting if setting is not None else '')
+            self.entries[i].insert(END, setting if setting else '')
             self.entries[i].grid(row=i, column=1)
         return self.entries[0]
 
