@@ -27,8 +27,8 @@ def prepare_coordinates(func):
     @wraps(func)
     def wrapped(self, *args, **kwargs):
         if not self.scale_x or not self.scale_y:
-            indent_x = max([icon.width() for icon in self.icons.values()]) + 5
-            indent_y = max([icon.height() for icon in self.icons.values()]) + self.font_size + 5
+            indent_x = max([icon.width() for icon in self.icons.values()[:-4]]) + 5
+            indent_y = max([icon.height() for icon in self.icons.values()[:-4]]) + self.font_size + 5
             self.scale_x = int((self.x0 - indent_x) / max([abs(point['x']) for point in self.points.values()]))
             self.scale_y = int((self.y0 - indent_y) / max([abs(point['y']) for point in self.points.values()]))
         if not self.coordinates:
@@ -473,13 +473,17 @@ class Application(Frame, object):
             x_end, y_end = self.coordinates[end_point]
             delta_x, delta_y = int((x_start - x_end) / weight) * position, int((y_start - y_end) / weight) * position
             x, y = x_start - delta_x, y_start - delta_y
-            image = self.icons[5] if train['player_idx'] == self.player_idx else self.icons[6]
-            indent_y = image.height() / 2
-            train_id = self.canvas.create_image(x, y - indent_y, image=image)
-            status = '{}/{}'.format(train['goods'], train['goods_capacity'])
+            if train['cooldown'] > 0:
+                icon = 7
+                status = None
+            else:
+                icon = 5 if train['player_idx'] == self.player_idx else 6
+                status = '{}/{}'.format(train['goods'], train['goods_capacity'])
+            indent_y = self.icons[icon].height() / 2
+            train_id = self.canvas.create_image(x, y - indent_y, image=self.icons[icon])
             text_id = self.canvas.create_text(x, y - (2 * indent_y + self.font_size), text=status,
-                                              font="{} {}".format(self.FONT, self.font_size))
-            trains[train_id] = {'icon': 4, 'text_obj': text_id}
+                                              font="{} {}".format(self.FONT, self.font_size)) if status else None
+            trains[train_id] = {'icon': icon, 'text_obj': text_id}
         self.canvas_obj['train'] = trains
 
     def show_weights(self):
