@@ -1,5 +1,5 @@
 host: wgforge-srv.wargaming.net
 port: 443
-timeout: 12
+timeout: 20
 username:
 password:
