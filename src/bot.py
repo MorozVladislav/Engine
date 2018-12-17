@@ -47,6 +47,8 @@ class Bot(object):
         self.adjacent = {}
         self.adjacent_no_markets = {}
         self.adjacent_no_storages = {}
+        self.markets = []
+        self.storages = []
         self.player_idx = None
         self.town = None
         self.idx = None
@@ -68,6 +70,8 @@ class Bot(object):
     def login(self):
         """Creates Client, sends log in request and displays username and rating in status bar."""
         self.refresh_status_bar('Connecting...')
+        self.current_tick = 0
+        self.last_events, self.expected_goods = {}, {}
         self.client = Client(host=self.host,
                              port=self.port,
                              timeout=self.timeout,
@@ -114,11 +118,11 @@ class Bot(object):
             self.occupied[train['idx']] = {'line_idx': train['line_idx'], 'position': train['position']}
             if train['player_idx'] == self.player_idx and train['idx'] not in self.expected_goods:
                 self.expected_goods[train['idx']] = {'type': None, 'amount': None, 'trip': None, 'route': None}
-        if not self.adjacent_no_markets or not self.adjacent_no_storages:
-            markets = [idx for idx, attrs in self.posts.items() if attrs['type'] == 2]
-            storages = [idx for idx, attrs in self.posts.items() if attrs['type'] == 3]
-            self.adjacent_no_markets = self.get_adjacent(exclude=markets)
-            self.adjacent_no_storages = self.get_adjacent(exclude=storages)
+        if not self.markets or not self.storages:
+            self.markets = [idx for idx, attrs in self.posts.items() if attrs['type'] == 2]
+            self.storages = [idx for idx, attrs in self.posts.items() if attrs['type'] == 3]
+            self.adjacent_no_markets = self.get_adjacent(exclude_points=self.markets)
+            self.adjacent_no_storages = self.get_adjacent(exclude_points=self.storages)
         rating = '{}: {}'.format(self.ratings[self.player_idx]['name'], self.ratings[self.player_idx]['rating'])
         self.refresh_status_bar(rating)
 
@@ -156,7 +160,6 @@ class Bot(object):
             while self.started:
                 self.move_trains()
                 self.tick()
-            self.queue = None
             self.logout()
         except Exception as exc:
             self.queue.put((99, exc))
@@ -166,23 +169,33 @@ class Bot(object):
         """Stops bot."""
         self.started = False
 
-    def get_adjacent(self, exclude=None):
-        """Returns new dict of adjacent points. Excludes points with indexes from exclude list.
+    def get_adjacent(self, exclude_points=None, exclude_lines=None):
+        """Returns new dict of adjacent points. Excludes points and lines from exclude_point and exclude_line lists.
 
-        :param exclude: list - points to be excluded from adjacent dict
+        :param exclude_points: list - points to be excluded from adjacent dict
+        :param exclude_lines: list - lines to be excluded from adjacent dict
         :return: dict - dict of adjacent points
         """
-        adjacent = {}
-        for idx, attrs in self.lines.items():
-            start_point, end_point = attrs['points'][0], attrs['points'][1]
-            if exclude and (start_point in exclude or end_point in exclude):
-                continue
-            if start_point not in adjacent.keys():
-                adjacent[start_point] = {}
-            if end_point not in adjacent.keys():
-                adjacent[end_point] = {}
-            adjacent[start_point][end_point] = idx
-            adjacent[end_point][start_point] = idx
+        if not exclude_lines and not exclude_points and self.adjacent:
+            adjacent = self.adjacent
+        elif exclude_points == self.markets and not exclude_lines and self.adjacent_no_markets:
+            adjacent = self.adjacent_no_markets
+        elif exclude_points == self.storages and not exclude_lines and self.adjacent_no_storages:
+            adjacent = self.adjacent_no_storages
+        else:
+            adjacent = {}
+            for idx, attrs in self.lines.items():
+                if exclude_lines and idx in exclude_lines:
+                    continue
+                start_point, end_point = attrs['points'][0], attrs['points'][1]
+                if exclude_points and (start_point in exclude_points or end_point in exclude_points):
+                    continue
+                if start_point not in adjacent.keys():
+                    adjacent[start_point] = {}
+                if end_point not in adjacent.keys():
+                    adjacent[end_point] = {}
+                adjacent[start_point][end_point] = idx
+                adjacent[end_point][start_point] = idx
         return adjacent
 
     def dijkstra_algorithm(self, point, adjacent):
@@ -208,46 +221,17 @@ class Bot(object):
         return point_to, visited
 
     def move_trains(self):
-        """Moves trains over their rotes."""
+        """Moves trains over their rotes and checks if a collision can occur in next move position."""
         player_trains = [train for train in self.trains.values()
                          if train['player_idx'] == self.player_idx and train['cooldown'] == 0]
         for train in player_trains:
             idx, line_idx, position, speed = train['idx'], train['line_idx'], train['position'], train['speed']
-            current_point = self.get_current_point(idx)
-            route = self.expected_goods[idx]['route']
-            length = self.lines[line_idx]['length']
-            occupied_lines = {}
-            for train_idx, coordinates in self.occupied.items():
-                if train_idx == idx:
-                    continue
-                if self.trains[train_idx]['player_idx'] == self.player_idx:
-                    future_position = coordinates['position']
-                else:
-                    future_position = coordinates['position'] + self.trains[train_idx]['speed']
-                if coordinates['line_idx'] not in occupied_lines.keys():
-                    occupied_lines[coordinates['line_idx']] = set()
-                occupied_lines[coordinates['line_idx']].add(future_position)
-
-            if position == 0 or position == length:
-                if route is None or route[-1] != self.town['point_idx']:
-                    self.goods_manager(train)
-                    route = self.expected_goods[idx]['route']
-                if len(route) > 1:
-                    route_point = route.index(current_point)
-                    line_idx = self.adjacent[route[route_point]][route[route_point + 1]]
-                    length = self.lines[line_idx]['length']
-                    speed = 1 if current_point == self.lines[line_idx]['points'][0] else -1
-                    position = speed if speed == 1 else length + speed
-                else:
-                    continue
+            if position == 0 or position == self.lines[line_idx]['length'] or speed == 0:
+                line_idx, position, speed = self.get_direction(idx)
             else:
                 position += speed
-            if line_idx in occupied_lines.keys() and position in occupied_lines[line_idx]:
-                line_idx, position = train['line_idx'], train['position']
-                self.client.move_train(line_idx, 0, idx)
-            else:
-                if train['speed'] == 0:
-                    self.client.move_train(line_idx, speed, idx)
+            line_idx, position, speed = self.check_collision(idx, line_idx, position, speed)
+            self.client.move_train(line_idx, speed, idx)
             self.occupied[idx]['line_idx'] = line_idx
             self.occupied[idx]['position'] = position
 
@@ -257,16 +241,17 @@ class Bot(object):
         :param train_idx: int - train index
         :return: int - current point index
         """
-        line = self.trains[train_idx]['line_idx']
+        line_idx = self.trains[train_idx]['line_idx']
         position = self.trains[train_idx]['position']
-        speed = self.trains[train_idx]['speed']
-        weight = self.lines[line]['length']
+        line_length = self.lines[line_idx]['length']
         town = self.town['point_idx']
         target = self.expected_goods[train_idx]['route'][-1] if self.expected_goods[train_idx]['route'] else None
-        if 0 < position < weight:
-            current = self.lines[line]['points'][0] if speed >= 0 else self.lines[line]['points'][1]
+        if 0 < position < line_length:
+            route = self.expected_goods[train_idx]['route']
+            start_point, end_point = self.lines[line_idx]['points'][0], self.lines[line_idx]['points'][1]
+            current = route[min(route.index(start_point), route.index(end_point))]
         else:
-            current = self.lines[line]['points'][0] if position == 0 else self.lines[line]['points'][1]
+            current = self.lines[line_idx]['points'][0] if position == 0 else self.lines[line_idx]['points'][1]
         if target and current == town and target == town:
             self.expected_goods[train_idx]['type'] = None
             self.expected_goods[train_idx]['route'] = None
@@ -291,14 +276,19 @@ class Bot(object):
             turn_points.append(point_from)
         return trip_to[target_point], list(reversed(turn_points))
 
-    def get_route(self, train_idx, goods_type):
-        """Returns 3-tuple of most profitable route characteristics or back to town route characteristics.
+    def get_route(self, train_idx, goods_type, exclude_points=None, exclude_lines=None):
+        """Returns 3-tuple of most profitable route characteristics or back-to-town route characteristics.
 
+        Returns 3-tuple of None if there is no route from current point.
         :param train_idx: int - train index
         :param goods_type: int - type of goods to be mined by a train
+        :param exclude_points: list - points to be excluded from route, default is None
+        :param exclude_lines: list - lines to be avoided when calculating a route, default is None
         :return: tuple - 3-tuple where the first item is a trip length, the second item is an amount of goods to be
         mined during the trip and the third item is a list of turn points
         """
+        exclude_points = exclude_points if exclude_points else []
+        exclude_lines = exclude_lines if exclude_lines else []
         train = self.trains[train_idx]
         current = self.get_current_point(train_idx)
         if train['goods'] < train['goods_capacity']:
@@ -309,14 +299,20 @@ class Bot(object):
             if current in self.posts and self.posts[current]['type'] == goods_type:
                 targets.append(self.town)
             max_efficiency, trip, goods, route = -1 * float('inf'), 0, 0, [current]
-            for post in targets:
-                if train['goods'] == 0:
-                    if goods_type == 2:
-                        trip_to, points_to = self.get_turn_points(current, post['point_idx'], self.adjacent_no_storages)
-                    else:
-                        trip_to, points_to = self.get_turn_points(current, post['point_idx'], self.adjacent_no_markets)
+            if train['goods'] == 0:
+                if goods_type == 2:
+                    adjacent = self.get_adjacent(exclude_points=self.storages + exclude_points,
+                                                 exclude_lines=exclude_lines)
                 else:
-                    trip_to, points_to = self.get_turn_points(current, post['point_idx'], self.adjacent)
+                    adjacent = self.get_adjacent(exclude_points=self.markets + exclude_points,
+                                                 exclude_lines=exclude_lines)
+            else:
+                adjacent = self.get_adjacent(exclude_points=exclude_points, exclude_lines=exclude_lines)
+            for post in targets:
+                if current in adjacent.keys():
+                    trip_to, points_to = self.get_turn_points(current, post['point_idx'], adjacent)
+                else:
+                    return None, None, None
                 trip_from, points_from = self.get_turn_points(post['point_idx'], self.town['point_idx'], self.adjacent)
                 if post != self.town:
                     post_goods = post['product'] if goods_type == 2 else post['armor']
@@ -339,40 +335,134 @@ class Bot(object):
                     trip = trip_to + trip_from
                     route = points_to
         else:
-            trip, route = self.get_turn_points(current, self.town['point_idx'], self.adjacent)
+            adjacent = self.get_adjacent(exclude_points=exclude_points, exclude_lines=exclude_lines)
+            trip, route = self.get_turn_points(current, self.town['point_idx'], adjacent)
             goods = self.trains[train_idx]['goods']
         return trip, goods, route
 
-    def goods_manager(self, train):
+    def get_direction(self, train_idx, exclude_points=None, exclude_lines=None):
+        """Returns new train moving attributes. Excludes points from exclude_points and lines from exclude_lines.
+
+        If a route is empty or has only one point - returns current train line index, position and speed.
+        :param train_idx: train_idx: int - train index
+        :param exclude_points: list - points to be excluded when calculating a direction, default is None
+        :param exclude_lines: list - lines to be excluded when calculating a direction, default is None
+        :return: tuple - 3-tuple: line_idx, position, speed. line_idx: int - line index, position: int - position
+        within the line, speed: int - speed value
+        """
+        position = self.trains[train_idx]['position']
+        line_length = self.lines[self.trains[train_idx]['line_idx']]['length']
+        if position == 0 or position == line_length:
+            self.goods_manager(train_idx, exclude_points=exclude_points, exclude_lines=exclude_lines)
+        route = self.expected_goods[train_idx]['route']
+        if route and len(route) > 1:
+            current_point = self.get_current_point(train_idx)
+            route_point = route.index(current_point)
+            line_idx = self.adjacent[route[route_point]][route[route_point + 1]]
+            speed = 1 if current_point == self.lines[line_idx]['points'][0] else -1
+            if position == 0 or position == line_length:
+                position = speed if position == 0 else self.lines[line_idx]['length'] + speed
+            else:
+                position = position + speed
+        else:
+            line_idx = self.trains[train_idx]['line_idx']
+            position = self.trains[train_idx]['position']
+            speed = self.trains[train_idx]['speed']
+        return line_idx, position, speed
+
+    def check_collision(self, train_idx, line_idx, position, speed):
+        """Returns a new direction for a train if there might be collision in the next position.
+
+        :param train_idx: train_idx: int - train index
+        :param line_idx: int - line index
+        :param position: int - position within the line
+        :param speed: int - speed value
+        :return: tuple - 3-tuple: line_idx, position, speed. line_idx: int - line index, position: int - position
+        within the line, speed: int - speed value
+        """
+        current_line_idx, current_position = self.trains[train_idx]['line_idx'], self.trains[train_idx]['position']
+        occupied_lines, occupied_points = {}, []
+        for idx, coordinates in self.occupied.items():
+            start_point = self.lines[coordinates['line_idx']]['points'][0]
+            end_point = self.lines[coordinates['line_idx']]['points'][1]
+            length = self.lines[coordinates['line_idx']]['length']
+            if idx == train_idx:
+                continue
+            if self.trains[train_idx]['player_idx'] == self.player_idx:
+                future_position = coordinates['position']
+            else:
+                future_position = coordinates['position'] + self.trains[train_idx]['speed']
+            if start_point in self.posts.keys() and self.posts[start_point]['type'] == 1 and future_position == 0:
+                continue
+            if end_point in self.posts.keys() and self.posts[end_point]['type'] == 1 and future_position == length:
+                continue
+            if coordinates['line_idx'] not in occupied_lines.keys():
+                occupied_lines[coordinates['line_idx']] = set()
+            occupied_lines[coordinates['line_idx']].add(future_position)
+            if future_position == 0:
+                occupied_points.append(start_point)
+            if future_position == length:
+                occupied_points.append(end_point)
+        if position == 0 or position == self.lines[line_idx]['length']:
+            point = self.lines[line_idx]['points'][0] if position == 0 else self.lines[line_idx]['points'][1]
+        else:
+            point = None
+
+        if line_idx in occupied_lines.keys() and position in occupied_lines[line_idx] and not point:
+            if current_position == 0 or current_position == self.lines[current_line_idx]['length']:
+                busy_lines = [line_idx]
+                while line_idx in occupied_lines.keys() and position in occupied_lines[line_idx]:
+                    line_idx, position, speed = self.get_direction(train_idx, exclude_lines=busy_lines)
+                    busy_lines.append(line_idx)
+            else:
+                line_idx, position, speed = current_line_idx, current_position, 0
+
+        if point in occupied_points:
+            line_idx, position, speed = current_line_idx, current_position, 0
+
+        return line_idx, position, speed
+
+    def goods_manager(self, train_idx, exclude_points=None, exclude_lines=None):
         """Assigns goods type to be mined by a train.
 
-        :param train: dict - dictionary of train attributes
+        :param train_idx: int - train index
+        :param exclude_points: list - points to be excluded from route, default is None
+        :param exclude_lines: list - lines to be excluded from route, default is None
         :return: None
         """
         if 4 in self.last_events.keys():
-            next_refuges = 10 * self.last_events[4]['refugees_number'] + self.last_events[4]['tick'] - self.current_tick
+            next_refuges = 15 * self.last_events[4]['refugees_number'] + self.last_events[4]['tick'] - self.current_tick
         else:
             next_refuges = float('inf')
-        if train['goods'] > 0:
-            goods_type = self.expected_goods[train['idx']]['type']
-            trip, amount, route = self.get_route(train['idx'], goods_type)
-            self.expected_goods[train['idx']] = {'type': goods_type, 'amount': amount, 'trip': trip, 'route': route}
-        else:
-            product_trip, product, product_route = self.get_route(train['idx'], 2)
-            armor_trip, armor, armor_route = self.get_route(train['idx'], 3)
-            product_inc, armor_inc = 0, 0
-            for idx, expected_goods in self.expected_goods.items():
-                if idx == train['idx']:
-                    continue
-                if expected_goods['type'] == 2 and expected_goods['trip'] <= armor_trip:
-                    product_inc += expected_goods['amount']
-                if expected_goods['type'] == 3 and expected_goods['trip'] <= armor_trip:
-                    armor_inc += expected_goods['amount']
-            rest = self.town['product'] + product_inc - (armor_trip + product_trip) * self.town['population']
-            total_armor = self.town['armor'] + armor_inc
-            if armor > 0 and rest > 0 and total_armor < self.town['armor_capacity'] and next_refuges > armor_trip:
-                self.expected_goods[train['idx']] = {'type': 3, 'amount': armor, 'trip': armor_trip,
-                                                     'route': armor_route}
+        if self.trains[train_idx]['goods'] > 0:
+            goods_type = self.expected_goods[train_idx]['type']
+            trip, amount, route = self.get_route(train_idx, goods_type, exclude_points=exclude_points,
+                                                 exclude_lines=exclude_lines)
+            if trip and amount and route:
+                self.expected_goods[train_idx] = {'type': goods_type, 'amount': amount, 'trip': trip, 'route': route}
             else:
-                self.expected_goods[train['idx']] = {'type': 2, 'amount': product, 'trip': product_trip,
-                                                     'route': product_route}
+                self.expected_goods[train_idx] = {'type': None, 'amount': None, 'trip': None, 'route': None}
+        else:
+            product_trip, product, product_route = self.get_route(train_idx, 2, exclude_points=exclude_points,
+                                                                  exclude_lines=exclude_lines)
+            armor_trip, armor, armor_route = self.get_route(train_idx, 3, exclude_points=exclude_points,
+                                                            exclude_lines=exclude_lines)
+            if product_trip and product and product_route and armor_trip and armor and armor_route:
+                product_inc, armor_inc = 0, 0
+                for idx, expected_goods in self.expected_goods.items():
+                    if idx == train_idx:
+                        continue
+                    if expected_goods['type'] == 2 and expected_goods['trip'] <= armor_trip:
+                        product_inc += expected_goods['amount']
+                    if expected_goods['type'] == 3 and expected_goods['trip'] <= armor_trip:
+                        armor_inc += expected_goods['amount']
+                rest = self.town['product'] + product_inc - (armor_trip + product_trip) * self.town['population']
+                total_armor = self.town['armor'] + armor_inc
+                if armor > 0 and rest > 0 and total_armor < self.town['armor_capacity'] and next_refuges > armor_trip:
+                    self.expected_goods[train_idx] = {'type': 3, 'amount': armor, 'trip': armor_trip,
+                                                      'route': armor_route}
+                else:
+                    self.expected_goods[train_idx] = {'type': 2, 'amount': product, 'trip': product_trip,
+                                                      'route': product_route}
+            else:
+                self.expected_goods[train_idx] = {'type': None, 'amount': None, 'trip': None, 'route': None}

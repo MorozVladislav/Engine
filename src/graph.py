@@ -73,7 +73,7 @@ class Graph(object):
 
         :param layout: string - graph layout type. Default layout is provided by @default_layout decorator
         :param kwargs: dict - keyword arguments of networkx layout methods
-        :return: 2 dicts; points and lines. Both Dicts has point or line index as a key and a Dict of attributes as a
+        :return: 2 dicts: points and lines. Both Dicts has point or line index as a key and a Dict of attributes as a
         value. Point attributes are: x-coordinate, y-coordinate and post idx. Line attributes are: start point,
         end point and weight
         """
