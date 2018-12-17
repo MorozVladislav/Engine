@@ -338,12 +338,16 @@ class Bot(object):
             adjacent = self.get_adjacent(exclude_points=exclude_points, exclude_lines=exclude_lines)
             trip, route = self.get_turn_points(current, self.town['point_idx'], adjacent)
             goods = self.trains[train_idx]['goods']
+        current_line_idx = self.trains[train_idx]['line_idx']
+        start_point, end_point = self.lines[current_line_idx]['points'][0], self.lines[current_line_idx]['points'][1]
+        route = [start_point] + route if start_point not in route else route
+        route = [end_point] + route if end_point not in route else route
         return trip, goods, route
 
     def get_direction(self, train_idx, exclude_points=None, exclude_lines=None):
         """Returns new train moving attributes. Excludes points from exclude_points and lines from exclude_lines.
 
-        If a route is empty or has only one point - returns current train line index, position and speed.
+        If a route is empty or has only one point - returns current train line index and position with speed 0.
         :param train_idx: train_idx: int - train index
         :param exclude_points: list - points to be excluded when calculating a direction, default is None
         :param exclude_lines: list - lines to be excluded when calculating a direction, default is None
@@ -352,8 +356,7 @@ class Bot(object):
         """
         position = self.trains[train_idx]['position']
         line_length = self.lines[self.trains[train_idx]['line_idx']]['length']
-        if position == 0 or position == line_length:
-            self.goods_manager(train_idx, exclude_points=exclude_points, exclude_lines=exclude_lines)
+        self.goods_manager(train_idx, exclude_points=exclude_points, exclude_lines=exclude_lines)
         route = self.expected_goods[train_idx]['route']
         if route and len(route) > 1:
             current_point = self.get_current_point(train_idx)
@@ -367,7 +370,7 @@ class Bot(object):
         else:
             line_idx = self.trains[train_idx]['line_idx']
             position = self.trains[train_idx]['position']
-            speed = self.trains[train_idx]['speed']
+            speed = 0
         return line_idx, position, speed
 
     def check_collision(self, train_idx, line_idx, position, speed):
@@ -407,7 +410,6 @@ class Bot(object):
             point = self.lines[line_idx]['points'][0] if position == 0 else self.lines[line_idx]['points'][1]
         else:
             point = None
-
         if line_idx in occupied_lines.keys() and position in occupied_lines[line_idx] and not point:
             if current_position == 0 or current_position == self.lines[current_line_idx]['length']:
                 busy_lines = [line_idx]
@@ -416,10 +418,8 @@ class Bot(object):
                     busy_lines.append(line_idx)
             else:
                 line_idx, position, speed = current_line_idx, current_position, 0
-
         if point in occupied_points:
             line_idx, position, speed = current_line_idx, current_position, 0
-
         return line_idx, position, speed
 
     def goods_manager(self, train_idx, exclude_points=None, exclude_lines=None):
