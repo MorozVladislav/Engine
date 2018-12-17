@@ -5,9 +5,12 @@ import tkFileDialog
 import tkSimpleDialog
 from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, CENTER, SE, X, Y
+from ttk import Combobox
 from functools import wraps
+from json import loads
 from os.path import expanduser, exists
 from os.path import join
+from socket import error, herror, gaierror, timeout
 from threading import Thread
 
 from PIL.ImageTk import PhotoImage
@@ -15,6 +18,7 @@ from attrdict import AttrDict
 from lya import AttrDict as DefaultsDict
 
 from bot import Bot
+from client import Client, ClientException
 from graph import Graph
 
 
@@ -113,6 +117,13 @@ class Application(Frame, object):
         self.player_idx = None
         self.posts = {}
         self.trains = {}
+        self.client = Client(host=self.host,
+                             port=self.port,
+                             timeout=self.timeout,
+                             username=self.username,
+                             password=self.password)
+        self.game = None
+        self.num_players = None
         self.bot = Bot()
         self.bot_thread = None
 
@@ -120,6 +131,7 @@ class Application(Frame, object):
         filemenu = Menu(self.menu)
         filemenu.add_command(label='Open file', command=self.file_open)
         filemenu.add_command(label='Server settings', command=self.open_server_settings)
+        filemenu.add_command(label='Select game', command=self.select_game)
         filemenu.add_command(label='Exit', command=self.exit)
         self.menu.add_cascade(label='Menu', menu=filemenu)
         master.config(menu=self.menu)
@@ -329,11 +341,28 @@ class Application(Frame, object):
         """Opens server settings window."""
         ServerSettings(self, title='Server settings')
 
+    def select_game(self):
+        """Opens select game window."""
+        SelectGame(self, title='Select game')
+
     def exit(self):
         """Closes application and stops bot if its started."""
         if self.bot_thread:
             self.bot_control()
         self.master.destroy()
+
+    def get_available_games(self):
+        try:
+            self.client.connect()
+            response = loads(self.client.games().data)
+            games = []
+            for game in response['games']:
+                games.append(game['name'])
+            self.client.close_connection()
+            return games
+        except (ClientException, error, herror, gaierror, timeout) as exc:
+            message = exc.message if exc.message != '' else exc.strerror
+            self.set_status_bar('Error: {}'.format(message))
 
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
@@ -567,10 +596,10 @@ class ServerSettings(tkSimpleDialog.Dialog, object):
         """
         self.resizable(False, False)
         settings = [self.parent.host, self.parent.port, self.parent.username, self.parent.password]
-        Label(master, text="Host:").grid(row=0, sticky='W')
-        Label(master, text="Port:").grid(row=1, sticky='W')
-        Label(master, text="Player name:").grid(row=2, sticky='W')
-        Label(master, text="Password:").grid(row=3, sticky='W')
+        Label(master, text='Host:').grid(row=0, sticky='W')
+        Label(master, text='Port:').grid(row=1, sticky='W')
+        Label(master, text='Player name:').grid(row=2, sticky='W')
+        Label(master, text='Password:').grid(row=3, sticky='W')
         for i in xrange(4):
             self.entries.append(Entry(master))
             setting = settings[i]
@@ -579,8 +608,47 @@ class ServerSettings(tkSimpleDialog.Dialog, object):
         return self.entries[0]
 
     def apply(self):
-        """Assigns entered value to parent host, port username and password attributes."""
+        """Assigns entered values to parent host, port username and password attributes."""
         settings = []
         for entry in self.entries:
             settings.append(str(entry.get()) if entry.get() != '' else None)
         self.parent.host, self.parent.port, self.parent.username, self.parent.password = settings
+
+
+class SelectGame(tkSimpleDialog.Dialog, object):
+    """Server settings window class"""
+
+    def __init__(self, *args, **kwargs):
+        """Initiates SelectGame instance with additional attributes.
+
+        :param args: positional arguments - positional arguments passed to parent __init__ method
+        :param kwargs: keyword arguments - keyword arguments passed to parent __init__ method
+        """
+        self.games, self.select_game, self.num_players = None, None, None
+        super(SelectGame, self).__init__(*args, **kwargs)
+
+    def body(self, master):
+        """Creates select game window.
+
+        :param master: instance - master widget instance
+        :return: Entry instance
+        """
+        self.resizable(False, False)
+        self.games = self.parent.get_available_games()
+        Label(master, text='Type in new game title or select existing one').grid(row=0, columnspan=2)
+        Label(master, text='Select game:').grid(row=1, sticky='W')
+        Label(master, text='Number of Players:').grid(row=2, sticky='W')
+        self.select_game = Combobox(master)
+        self.select_game.configure(values=self.games)
+        self.select_game.grid(row=1, column=1, sticky='W')
+        self.num_players = Entry(master)
+        num_players = self.parent.num_players if self.parent.num_players else ''
+        self.num_players.insert(END, num_players)
+        self.num_players.grid(row=2, column=1, sticky='W')
+        return self.select_game
+
+    def apply(self):
+        """Assigns entered values to parent game and num_players attributes."""
+        self.parent.game = self.select_game.get() if self.select_game.get() != '' else None
+        if self.parent.game not in self.games:
+            self.parent.num_players = self.num_players.get() if self.num_players.get() != '' else None

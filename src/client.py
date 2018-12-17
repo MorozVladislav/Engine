@@ -8,7 +8,7 @@ from struct import pack, unpack
 
 
 def connection(func):
-    """Checks the connection to be created before request
+    """Checks the connection to be created before request.
 
     :param func: function - function that calls Client methods
     :return: wrapped function
@@ -61,9 +61,22 @@ class Client(object):
         self.host, self.port, self.timeout, self.username, self.password = host, port, timeout, username, password
         self.connection = None
 
+    def connect(self):
+        """Creates connection with game server."""
+        if self.host is None:
+            raise HostMissing('host is missing')
+        if self.port is None:
+            raise PortMissing('port is missing')
+        self.connection = socket.create_connection((self.host, self.port), self.timeout)
+
+    def close_connection(self):
+        """Closes connection if it is opened."""
+        if self.connection:
+            self.connection.close()
+
     @connection
     def send(self, action, body=None):
-        """Prepares request and sends it
+        """Prepares request and sends it.
 
         :param action: int - action ID
         :param body: dict - request body
@@ -103,15 +116,10 @@ class Client(object):
         :param game: str - game’s name
         :return: Response instance
         """
-        if self.host is None:
-            raise HostMissing('host is missing')
-        if self.port is None:
-            raise PortMissing('port is missing')
         name = name if name is not None else self.username
         password = password if password is not None else self.password
         if name is None:
             raise UsernameMissing('username is missing')
-        self.connection = socket.create_connection((self.host, self.port), self.timeout)
         body = {'name': name}
         if password is not None:
             body['password'] = password
@@ -170,6 +178,14 @@ class Client(object):
         self.send(6)
         return self.receive()
 
+    def games(self):
+        """Sends GAMES request and receives response.
+
+        :return: Response instance
+        """
+        self.send(7)
+        return self.receive()
+
     def get_static_objects(self):
         """Sends MAP request for static objects and receives response.
 
@@ -201,17 +217,17 @@ class ClientException(Exception):
 
 
 class ConnectionNotEstablished(ClientException):
-    """Connection not established exception class"""
+    """Connection not established exception class."""
     pass
 
 
 class HostMissing(ClientException):
-    """Missing host exception class"""
+    """Missing host exception class."""
     pass
 
 
 class PortMissing(ClientException):
-    """Missing port exception class"""
+    """Missing port exception class."""
     pass
 
 

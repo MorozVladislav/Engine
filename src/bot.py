@@ -38,6 +38,8 @@ class Bot(object):
         self.username = None
         self.password = None
         self.client = None
+        self.game = None
+        self.num_players = None
         self.queue = None
         self.started = False
         self.current_tick = 0
@@ -67,7 +69,7 @@ class Bot(object):
         self.queue.put((0, value))
 
     @client_exceptions
-    def login(self):
+    def login(self, game=None, num_players=None):
         """Creates Client, sends log in request and displays username and rating in status bar."""
         self.refresh_status_bar('Connecting...')
         self.current_tick = 0
@@ -77,7 +79,8 @@ class Bot(object):
                              timeout=self.timeout,
                              username=self.username,
                              password=self.password)
-        response = loads(self.client.login().data)
+        self.client.connect()
+        response = loads(self.client.login(game=game, num_players=num_players).data)
         self.player_idx = response['idx']
         self.queue.put((1, self.player_idx))
         self.refresh_status_bar('{}: {}'.format(response['name'], response['rating']))
@@ -141,7 +144,7 @@ class Bot(object):
             if goods['trip'] and self.trains[train_idx]['speed'] != 0:
                 goods['trip'] -= 1
 
-    def start(self, host=None, port=None, time_out=None, username=None, password=None):
+    def start(self, host=None, port=None, time_out=None, username=None, password=None, game=None, num_players=None):
         """Logs in and starts bot.
 
         :param host: string - host
@@ -149,11 +152,15 @@ class Bot(object):
         :param time_out: int - timeout
         :param username: string - username
         :param password: string - password
+        :param game: string - game title to connect to or create game with the title if it doesn't exist
+        :param num_players: int - number of players in the game
+        :return: None
         """
         self.host, self.port, self.timeout, self.username, self.password = host, port, time_out, username, password
+        self.game, self.num_players = game, num_players
         self.queue = Queue()
         try:
-            self.login()
+            self.login(game=self.game, num_players=self.num_players)
             self.build_map()
             self.refresh_map()
             self.started = True
