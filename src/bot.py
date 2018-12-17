@@ -159,6 +159,7 @@ class Bot(object):
             self.started = True
             while self.started:
                 self.move_trains()
+                self.upgrade()
                 self.tick()
             self.logout()
         except Exception as exc:
@@ -364,7 +365,7 @@ class Bot(object):
             line_idx = self.adjacent[route[route_point]][route[route_point + 1]]
             speed = 1 if current_point == self.lines[line_idx]['points'][0] else -1
             if position == 0 or position == line_length:
-                position = speed if position == 0 else self.lines[line_idx]['length'] + speed
+                position = 1 if speed == 1 else self.lines[line_idx]['length'] - 1
             else:
                 position = position + speed
         else:
@@ -430,11 +431,7 @@ class Bot(object):
         :param exclude_lines: list - lines to be excluded from route, default is None
         :return: None
         """
-        if 4 in self.last_events.keys():
-            next_refuges = 15 * self.last_events[4]['refugees_number'] + self.last_events[4]['tick'] - self.current_tick
-        else:
-            next_refuges = float('inf')
-        if self.trains[train_idx]['goods'] > 0:
+        if self.trains[train_idx]['goods'] > 0 and self.expected_goods[train_idx]['type']:
             goods_type = self.expected_goods[train_idx]['type']
             trip, amount, route = self.get_route(train_idx, goods_type, exclude_points=exclude_points,
                                                  exclude_lines=exclude_lines)
@@ -448,17 +445,13 @@ class Bot(object):
             armor_trip, armor, armor_route = self.get_route(train_idx, 3, exclude_points=exclude_points,
                                                             exclude_lines=exclude_lines)
             if product_trip and product and product_route and armor_trip and armor and armor_route:
-                product_inc, armor_inc = 0, 0
-                for idx, expected_goods in self.expected_goods.items():
-                    if idx == train_idx:
-                        continue
-                    if expected_goods['type'] == 2 and expected_goods['trip'] <= armor_trip:
-                        product_inc += expected_goods['amount']
-                    if expected_goods['type'] == 3 and expected_goods['trip'] <= armor_trip:
-                        armor_inc += expected_goods['amount']
-                rest = self.town['product'] + product_inc - (armor_trip + product_trip) * self.town['population']
-                total_armor = self.town['armor'] + armor_inc
-                if armor > 0 and rest > 0 and total_armor < self.town['armor_capacity'] and next_refuges > armor_trip:
+                with_armor, with_product = 0, 0
+                for attributes in self.expected_goods.values():
+                    if attributes['type'] == 2:
+                        with_product += 1
+                    else:
+                        with_armor += 1
+                if with_product > 2 * with_armor:
                     self.expected_goods[train_idx] = {'type': 3, 'amount': armor, 'trip': armor_trip,
                                                       'route': armor_route}
                 else:
@@ -466,3 +459,23 @@ class Bot(object):
                                                       'route': product_route}
             else:
                 self.expected_goods[train_idx] = {'type': None, 'amount': None, 'trip': None, 'route': None}
+
+    def upgrade(self):
+        """Upgrades trains and town."""
+        trains, towns = [], []
+        available_armor = self.town['armor'] * 0.5
+        trains_to_upgrade = []
+        for idx, coordinates in self.occupied.items():
+            line = self.lines[coordinates['line_idx']]
+            if line['points'][0] == self.town['point_idx'] and coordinates['position'] == 0:
+                trains_to_upgrade.append(idx)
+            if line['points'][0] == self.town['point_idx'] and coordinates['position'] == line['length']:
+                trains_to_upgrade.append(idx)
+        for idx in trains_to_upgrade:
+            if self.trains[idx]['next_level_price'] and self.trains[idx]['next_level_price'] <= available_armor:
+                trains.append(idx)
+                available_armor -= self.trains[idx]['next_level_price']
+        if not trains_to_upgrade and self.town['next_level_price'] and self.town['next_level_price'] <= available_armor:
+            towns.append(self.town['idx'])
+            available_armor -= self.town['next_level_price']
+        self.client.upgrade(towns, trains)
