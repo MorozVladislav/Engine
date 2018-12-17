@@ -159,6 +159,7 @@ class Bot(object):
             self.started = True
             while self.started:
                 self.move_trains()
+                self.upgrade_manager()
                 self.tick()
             self.logout()
         except Exception as exc:
@@ -466,3 +467,18 @@ class Bot(object):
                                                       'route': product_route}
             else:
                 self.expected_goods[train_idx] = {'type': None, 'amount': None, 'trip': None, 'route': None}
+
+    def upgrade_manager(self):
+        """Assigns upgrades to trains and town."""
+        trains = []
+        towns = []
+        town_armor = self.town['armor']
+        for train in [train for train in self.trains.values() if train['player_idx'] == self.player_idx]:
+            if train['next_level_price'] <= town_armor and train['next_level_price']:
+                trains.append(train['idx'])
+                town_armor -= train['next_level_price']
+        if self.town['population'] == self.town['population_capacity']and self.town['next_level_price'] and\
+                self.town['next_level_price'] <= town_armor:
+            towns.append(self.town['idx'])
+            town_armor -= self.town['next_level_price']
+        self.client.upgrade(towns, trains)
