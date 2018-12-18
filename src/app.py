@@ -5,13 +5,13 @@ import tkFileDialog
 import tkSimpleDialog
 from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, CENTER, SE, X, Y
-from ttk import Combobox
 from functools import wraps
 from json import loads
 from os.path import expanduser, exists
 from os.path import join
 from socket import error, herror, gaierror, timeout
 from threading import Thread
+from ttk import Combobox
 
 from PIL.ImageTk import PhotoImage
 from attrdict import AttrDict
@@ -117,11 +117,7 @@ class Application(Frame, object):
         self.player_idx = None
         self.posts = {}
         self.trains = {}
-        self.client = Client(host=self.host,
-                             port=self.port,
-                             timeout=self.timeout,
-                             username=self.username,
-                             password=self.password)
+        self.client = None
         self.game = None
         self.num_players = None
         self.bot = Bot()
@@ -352,12 +348,15 @@ class Application(Frame, object):
         self.master.destroy()
 
     def get_available_games(self):
+        """Returns list of available games.
+
+        :return: list - list of available games names
+        """
         try:
+            self.client = Client(host=self.host, port=self.port)
             self.client.connect()
             response = loads(self.client.games().data)
-            games = []
-            for game in response['games']:
-                games.append(game['name'])
+            games = [game['name'] for game in response['games']]
             self.client.close_connection()
             return games
         except (ClientException, error, herror, gaierror, timeout) as exc:
@@ -493,7 +492,7 @@ class Application(Frame, object):
 
     @prepare_coordinates
     def draw_trains(self):
-        """Draws trains by prepared coordinates"""
+        """Draws trains by prepared coordinates."""
         trains = {}
         for train in self.trains.values():
             start_point = self.lines[train['line_idx']]['start_point']
@@ -579,7 +578,7 @@ class Application(Frame, object):
 
 
 class ServerSettings(tkSimpleDialog.Dialog, object):
-    """Server settings window class"""
+    """Server settings window class."""
 
     def __init__(self, *args, **kwargs):
         """Initiates ServerSettings instance with additional attribute.
@@ -618,7 +617,7 @@ class ServerSettings(tkSimpleDialog.Dialog, object):
 
 
 class SelectGame(tkSimpleDialog.Dialog, object):
-    """Server settings window class"""
+    """Server settings window class."""
 
     def __init__(self, *args, **kwargs):
         """Initiates SelectGame instance with additional attributes.
@@ -639,9 +638,8 @@ class SelectGame(tkSimpleDialog.Dialog, object):
         self.games = self.parent.get_available_games()
         Label(master, text='Type in new game title or select existing one').grid(row=0, columnspan=2)
         Label(master, text='Select game:').grid(row=1, sticky='W')
-        Label(master, text='Number of Players:').grid(row=2, sticky='W')
-        self.select_game = Combobox(master)
-        self.select_game.configure(values=self.games)
+        Label(master, text='Number of players:').grid(row=2, sticky='W')
+        self.select_game = Combobox(master, values=self.games)
         self.select_game.grid(row=1, column=1, sticky='W')
         self.num_players = Entry(master)
         num_players = self.parent.num_players if self.parent.num_players else ''
@@ -653,4 +651,4 @@ class SelectGame(tkSimpleDialog.Dialog, object):
         """Assigns entered values to parent game and num_players attributes."""
         self.parent.game = self.select_game.get() if self.select_game.get() != '' else None
         if self.parent.game not in self.games:
-            self.parent.num_players = int(self.num_players.get()) if self.num_players.get() != '' else None
+            self.parent.num_players = int(self.num_players.get()) if self.num_players.get().isdigit() else None

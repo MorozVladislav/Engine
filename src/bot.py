@@ -492,7 +492,7 @@ class Bot(object):
             line = self.lines[coordinates['line_idx']]
             if line['points'][0] == self.town['point_idx'] and coordinates['position'] == 0:
                 trains_to_upgrade.append(idx)
-            if line['points'][0] == self.town['point_idx'] and coordinates['position'] == line['length']:
+            if line['points'][1] == self.town['point_idx'] and coordinates['position'] == line['length']:
                 trains_to_upgrade.append(idx)
         for idx in trains_to_upgrade:
             if self.trains[idx]['next_level_price'] and self.trains[idx]['next_level_price'] <= available_armor:

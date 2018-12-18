@@ -62,7 +62,7 @@ class Client(object):
         self.connection = None
 
     def connect(self):
-        """Creates connection with game server."""
+        """Creates connection with game server. If host or port are None raises corresponding exceptions."""
         if self.host is None:
             raise HostMissing('host is missing')
         if self.port is None:
