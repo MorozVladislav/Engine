@@ -181,8 +181,8 @@ class Bot(object):
             self.build_map()
             self.refresh_map()
             while self.started:
-                self.move_trains()
                 self.upgrade()
+                self.move_trains()
                 self.tick()
             self.logout()
         except Exception as exc:
@@ -268,17 +268,12 @@ class Bot(object):
         line_idx = self.trains[train_idx]['line_idx']
         position = self.trains[train_idx]['position']
         line_length = self.lines[line_idx]['length']
-        town = self.town['point_idx']
-        target = self.expected_goods[train_idx]['route'][-1] if self.expected_goods[train_idx]['route'] else None
         if 0 < position < line_length:
             route = self.expected_goods[train_idx]['route']
             start_point, end_point = self.lines[line_idx]['points'][0], self.lines[line_idx]['points'][1]
             current = route[min(route.index(start_point), route.index(end_point))]
         else:
             current = self.lines[line_idx]['points'][0] if position == 0 else self.lines[line_idx]['points'][1]
-        if target and current == town and target == town:
-            self.expected_goods[train_idx]['type'] = None
-            self.expected_goods[train_idx]['route'] = None
         return current
 
     def get_turn_points(self, point_from, target_point, adjacent):
@@ -454,7 +449,12 @@ class Bot(object):
         :param exclude_lines: list - lines to be excluded from route, default is None
         :return: None
         """
-        if self.trains[train_idx]['goods'] > 0 and self.expected_goods[train_idx]['type']:
+        current_point = self.get_current_point(train_idx)
+        target = self.expected_goods[train_idx]['route'][-1] if self.expected_goods[train_idx]['route'] else None
+        if target and current_point == self.town['point_idx'] and target == self.town['point_idx']:
+            self.expected_goods[train_idx]['type'] = None
+            self.expected_goods[train_idx]['route'] = None
+        if self.trains[train_idx]['goods'] > 0:
             goods_type = self.expected_goods[train_idx]['type']
             trip, amount, route = self.get_route(train_idx, goods_type, exclude_points=exclude_points,
                                                  exclude_lines=exclude_lines)
@@ -472,9 +472,10 @@ class Bot(object):
                 for attributes in self.expected_goods.values():
                     if attributes['type'] == 2:
                         with_product += 1
-                    else:
+                    if attributes['type'] == 3:
                         with_armor += 1
-                if with_product > 2 * with_armor:
+                product_level = float(self.town['product']) / float(self.town['product_capacity'])
+                if product_level > 0.6 and with_product > with_armor:
                     self.expected_goods[train_idx] = {'type': 3, 'amount': armor, 'trip': armor_trip,
                                                       'route': armor_route}
                 else:
@@ -485,19 +486,19 @@ class Bot(object):
 
     def upgrade(self):
         """Upgrades trains and town."""
-        trains, towns = [], []
+        trains, towns, trains_to_upgrade = [], [], []
         available_armor = self.town['armor'] * 0.5
-        trains_to_upgrade = []
-        for idx, coordinates in self.occupied.items():
-            line = self.lines[coordinates['line_idx']]
-            if line['points'][0] == self.town['point_idx'] and coordinates['position'] == 0:
-                trains_to_upgrade.append(idx)
-            if line['points'][1] == self.town['point_idx'] and coordinates['position'] == line['length']:
-                trains_to_upgrade.append(idx)
-        for idx in trains_to_upgrade:
-            if self.trains[idx]['next_level_price'] and self.trains[idx]['next_level_price'] <= available_armor:
-                trains.append(idx)
-                available_armor -= self.trains[idx]['next_level_price']
+        player_trains = [train for train in self.trains.values() if train['player_idx'] == self.player_idx]
+        for train in player_trains:
+            line = self.lines[train['line_idx']]
+            if line['points'][0] == self.town['point_idx'] and train['position'] == 0:
+                trains_to_upgrade.append(train)
+            if line['points'][1] == self.town['point_idx'] and train['position'] == line['length']:
+                trains_to_upgrade.append(train)
+        for train in trains_to_upgrade:
+            if train['next_level_price'] and train['next_level_price'] <= available_armor:
+                trains.append(train['idx'])
+                available_armor -= train['next_level_price']
         if not trains_to_upgrade and self.town['next_level_price'] and self.town['next_level_price'] <= available_armor:
             towns.append(self.town['idx'])
             available_armor -= self.town['next_level_price']
