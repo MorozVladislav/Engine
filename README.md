@@ -15,6 +15,8 @@
 [Task 3](tasks/task_3.md)
 ### Стратегия модернизационная образцовая IV
 [Задание 4](tasks/task_4.md)
+### Стратификация ресурсная божественная V
+[Задание 5](tasks/task_5.md)
 
 ## Dependencies
 The application requires Python2.7 and pip installed. All the rest dependencies are indicated in requirements.txt
