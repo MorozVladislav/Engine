@@ -372,7 +372,9 @@ class Application(Frame, object):
                 'port': self.port,
                 'time_out': self.timeout,
                 'username': self.username,
-                'password': self.password})
+                'password': self.password,
+                'game': self.game,
+                'num_players': self.num_players})
             self.bot_thread.start()
         else:
             self.bot.stop()
@@ -651,4 +653,4 @@ class SelectGame(tkSimpleDialog.Dialog, object):
         """Assigns entered values to parent game and num_players attributes."""
         self.parent.game = self.select_game.get() if self.select_game.get() != '' else None
         if self.parent.game not in self.games:
-            self.parent.num_players = self.num_players.get() if self.num_players.get() != '' else None
+            self.parent.num_players = int(self.num_players.get()) if self.num_players.get() != '' else None

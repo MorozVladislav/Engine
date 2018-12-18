@@ -5,6 +5,7 @@ from Queue import Queue
 from functools import wraps
 from json import loads
 from socket import error, herror, gaierror, timeout
+from time import sleep
 
 from client import Client, ClientException
 
@@ -130,6 +131,18 @@ class Bot(object):
         self.refresh_status_bar(rating)
 
     @client_exceptions
+    def game_is_run(self):
+        """Returns True if the game is run and False in all other cases.
+
+        :return: bool
+        """
+        games = loads(self.client.games().data)['games']
+        for game in games:
+            if game['name'] == self.game and game['state'] == 2:
+                return True
+        return False
+
+    @client_exceptions
     def logout(self):
         """Sends log out request."""
         self.client.logout()
@@ -156,14 +169,17 @@ class Bot(object):
         :param num_players: int - number of players in the game
         :return: None
         """
+        self.started = True
         self.host, self.port, self.timeout, self.username, self.password = host, port, time_out, username, password
         self.game, self.num_players = game, num_players
         self.queue = Queue()
         try:
             self.login(game=self.game, num_players=self.num_players)
+            if self.game:
+                while self.started and not self.game_is_run():
+                    sleep(1)
             self.build_map()
             self.refresh_map()
-            self.started = True
             while self.started:
                 self.move_trains()
                 self.upgrade()
