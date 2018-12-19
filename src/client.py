@@ -106,14 +106,15 @@ class Client(object):
             raise BadServerResponse('{} {}'.format(Response.STATUS[status], message))
         return Response(status, length, data)
 
-    def login(self, name=None, password=None, num_players=None, game=None):
+    def login(self, name=None, password=None, game=None, num_players=None, num_turns=None):
         """Sends LOGIN request and receives response. If name is missing throws UsernameMissing exception.
 
         :param name: str - player's name
         :param password: str - player’s password used to verify the connection, if player with the same name tries to
         connect with another password - login will be rejected
-        :param num_players: int - number of players in the game
         :param game: str - game’s name
+        :param num_players: int - number of players in the game
+        :param num_turns: int - number of turns of the game (game duration)
         :return: Response instance
         """
         name = name if name is not None else self.username
@@ -123,10 +124,12 @@ class Client(object):
         body = {'name': name}
         if password is not None:
             body['password'] = password
-        if num_players is not None:
-            body['num_players'] = num_players
         if game is not None:
             body['game'] = game
+        if num_players is not None:
+            body['num_players'] = num_players
+        if num_turns is not None:
+            body['num_turns'] = num_turns
         self.send(1, body)
         return self.receive()
 

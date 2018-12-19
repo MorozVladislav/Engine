@@ -6,10 +6,8 @@ import tkSimpleDialog
 from Tkinter import Frame, StringVar, IntVar, Menu, Label, Canvas, Scrollbar, Checkbutton, Entry
 from Tkinter import HORIZONTAL, VERTICAL, BOTTOM, RIGHT, LEFT, BOTH, END, NORMAL, CENTER, SE, X, Y
 from functools import wraps
-from json import loads
 from os.path import expanduser, exists
 from os.path import join
-from socket import error, herror, gaierror, timeout
 from threading import Thread
 from ttk import Combobox
 
@@ -18,7 +16,6 @@ from attrdict import AttrDict
 from lya import AttrDict as DefaultsDict
 
 from bot import Bot
-from client import Client, ClientException
 from graph import Graph
 
 
@@ -100,6 +97,7 @@ class Application(Frame, object):
             1: self.set_player_idx,
             2: self.build_map,
             3: self.refresh_map,
+            4: self.set_available_games,
             99: self.bot_control
         }
 
@@ -117,9 +115,11 @@ class Application(Frame, object):
         self.player_idx = None
         self.posts = {}
         self.trains = {}
-        self.client = None
+        self.select_game_window = False
+        self.available_games = None
         self.game = None
         self.num_players = None
+        self.num_turns = None
         self.bot = Bot()
         self.bot_thread = None
 
@@ -173,6 +173,7 @@ class Application(Frame, object):
 
         self.pack(fill=BOTH, expand=True)
         self.requests_executor()
+        self.get_available_games()
         self.set_status_bar('Click Play to start the game')
         self.play.place(rely=0.5, relx=0.5, anchor=CENTER)
 
@@ -339,29 +340,16 @@ class Application(Frame, object):
 
     def select_game(self):
         """Opens select game window."""
+        self.select_game_window = True
         SelectGame(self, title='Select game')
+        self.select_game_window = False
+        self.set_status_bar('Click Play to start the game')
 
     def exit(self):
         """Closes application and stops bot if its started."""
         if self.bot_thread:
             self.bot_control()
         self.master.destroy()
-
-    def get_available_games(self):
-        """Returns list of available games.
-
-        :return: list - list of available games names
-        """
-        try:
-            self.client = Client(host=self.host, port=self.port)
-            self.client.connect()
-            response = loads(self.client.games().data)
-            games = [game['name'] for game in response['games']]
-            self.client.close_connection()
-            return games
-        except (ClientException, error, herror, gaierror, timeout) as exc:
-            message = exc.message if exc.message != '' else exc.strerror
-            self.set_status_bar('Error: {}'.format(message))
 
     def bot_control(self):
         """Starts bot for playing the game or stops it if it is started."""
@@ -373,12 +361,23 @@ class Application(Frame, object):
                 'username': self.username,
                 'password': self.password,
                 'game': self.game,
-                'num_players': self.num_players})
+                'num_players': self.num_players,
+                'num_turns': self.num_turns})
             self.bot_thread.start()
         else:
             self.bot.stop()
             self.bot_thread.join()
             self.bot_thread = None
+
+    def get_available_games(self):
+        """Requests a list of available games."""
+        if self.select_game_window:
+            self.bot.get_available_games(host=self.host, port=self.port, time_out=self.timeout)
+        self.after(1000, self.get_available_games)
+
+    def set_available_games(self, games):
+        """Sets new value for available games list."""
+        self.available_games = games
 
     def set_status_bar(self, value):
         """Assigns new status bar value and updates it.
@@ -543,16 +542,15 @@ class Application(Frame, object):
 
     def requests_executor(self):
         """Dequeues and executes requests. Assigns corresponding label to bot control button."""
-        if self.bot_thread:
-            if not self.bot.queue.empty():
-                request_type, request_body = self.bot.queue.get_nowait()
-                if request_type == 99 and request_body:
-                    self.open_server_settings()
-                    request_body = None
-                if request_body:
-                    self.queue_requests[request_type](request_body)
-                else:
-                    self.queue_requests[request_type]()
+        if not self.bot.queue.empty():
+            request_type, request_body = self.bot.queue.get_nowait()
+            if request_type == 99 and request_body:
+                self.open_server_settings()
+                request_body = None
+            if request_body is not None:
+                self.queue_requests[request_type](request_body)
+            else:
+                self.queue_requests[request_type]()
         if self.bot_thread and self.bot_thread.is_alive():
             if self.play.place_info():
                 self.play.place_forget()
@@ -625,7 +623,7 @@ class SelectGame(tkSimpleDialog.Dialog, object):
         :param args: positional arguments - positional arguments passed to parent __init__ method
         :param kwargs: keyword arguments - keyword arguments passed to parent __init__ method
         """
-        self.games, self.select_game, self.num_players = None, None, None
+        self.select_game, self.num_players, self.num_turns = None, None, None
         super(SelectGame, self).__init__(*args, **kwargs)
 
     def body(self, master):
@@ -635,20 +633,28 @@ class SelectGame(tkSimpleDialog.Dialog, object):
         :return: Entry instance
         """
         self.resizable(False, False)
-        self.games = self.parent.get_available_games()
         Label(master, text='Type in new game title or select existing one').grid(row=0, columnspan=2)
         Label(master, text='Select game:').grid(row=1, sticky='W')
         Label(master, text='Number of players:').grid(row=2, sticky='W')
-        self.select_game = Combobox(master, values=self.games)
+        Label(master, text='Game duration:').grid(row=3, sticky='W')
+        self.select_game = Combobox(master)
+        self.select_game.bind('<Button-1>', self.refresh_games)
         self.select_game.grid(row=1, column=1, sticky='W')
         self.num_players = Entry(master)
-        num_players = self.parent.num_players if self.parent.num_players else ''
-        self.num_players.insert(END, num_players)
+        self.num_players.insert(END, self.parent.num_players if self.parent.num_players else '')
         self.num_players.grid(row=2, column=1, sticky='W')
+        self.num_turns = Entry(master)
+        self.num_turns.insert(END, self.parent.num_turns if self.parent.num_turns else '')
+        self.num_turns.grid(row=3, column=1, sticky='W')
         return self.select_game
 
     def apply(self):
         """Assigns entered values to parent game and num_players attributes."""
         self.parent.game = self.select_game.get() if self.select_game.get() != '' else None
-        if self.parent.game not in self.games:
+        if self.parent.game not in self.parent.available_games:
             self.parent.num_players = int(self.num_players.get()) if self.num_players.get().isdigit() else None
+            self.parent.num_turns = int(self.num_turns.get()) if self.num_turns.get().isdigit() else None
+
+    def refresh_games(self, _):
+        """Refreshes games list."""
+        self.select_game.configure(values=self.parent.available_games)
