@@ -23,7 +23,6 @@ def client_exceptions(func):
         except (ClientException, error, herror, gaierror, timeout) as exc:
             message = exc.message if exc.message != '' else exc.strerror
             self.refresh_status_bar('Error: {}'.format(message))
-            raise exc
 
     return wrapped
 
@@ -36,15 +35,11 @@ class Bot(object):
         self.host = None
         self.port = None
         self.timeout = None
-        self.username = None
-        self.password = None
         self.client = None
         self.game = None
-        self.num_players = None
-        self.queue = None
+        self.queue = Queue()
         self.started = False
         self.current_tick = 0
-        self.last_events = {}
         self.lines = {}
         self.points = {}
         self.adjacent = {}
@@ -70,18 +65,18 @@ class Bot(object):
         self.queue.put((0, value))
 
     @client_exceptions
-    def login(self, game=None, num_players=None):
-        """Creates Client, sends log in request and displays username and rating in status bar."""
+    def login(self, game=None, num_players=None, num_turns=None):
+        """Creates Client, sends log in request and displays username and rating in status bar.
+
+        :param game: string - game name
+        :param num_players: int - number of players in a game
+        :param num_turns: int - number of turns (game duration)
+        :return: None
+        """
         self.refresh_status_bar('Connecting...')
         self.current_tick = 0
-        self.last_events, self.expected_goods = {}, {}
-        self.client = Client(host=self.host,
-                             port=self.port,
-                             timeout=self.timeout,
-                             username=self.username,
-                             password=self.password)
-        self.client.connect()
-        response = loads(self.client.login(game=game, num_players=num_players).data)
+        self.expected_goods = {}
+        response = loads(self.client.login(game=game, num_players=num_players, num_turns=num_turns).data)
         self.player_idx = response['idx']
         self.queue.put((1, self.player_idx))
         self.refresh_status_bar('{}: {}'.format(response['name'], response['rating']))
@@ -115,7 +110,6 @@ class Bot(object):
                         self.refresh_status_bar('Game over!')
                         self.queue.put((99, None))
                         return
-                    self.last_events[event['type']] = event
         self.occupied = {}
         for train in dynamic_objects['trains']:
             self.trains[train['idx']] = train
@@ -129,6 +123,20 @@ class Bot(object):
             self.adjacent_no_storages = self.get_adjacent(exclude_points=self.storages)
         rating = '{}: {}'.format(self.ratings[self.player_idx]['name'], self.ratings[self.player_idx]['rating'])
         self.refresh_status_bar(rating)
+
+    @client_exceptions
+    def get_available_games(self, host=None, port=None, time_out=None):
+        """Requests available games and enqueues list of available games names.
+
+        :param host: string - host
+        :param port: int - port
+        :param time_out: int - timeout
+        :return: None
+        """
+        self.connect(host=host, port=port, time_out=time_out)
+        response = loads(self.client.games().data)
+        games = [game['name'] for game in response['games']]
+        self.queue.put((4, games))
 
     @client_exceptions
     def game_is_run(self):
@@ -157,7 +165,35 @@ class Bot(object):
             if goods['trip'] and self.trains[train_idx]['speed'] != 0:
                 goods['trip'] -= 1
 
-    def start(self, host=None, port=None, time_out=None, username=None, password=None, game=None, num_players=None):
+    def connect(self, host=None, port=None, time_out=None, username=None, password=None):
+        """Creates connection with game server.
+
+        :param host: string - host
+        :param port: int - port
+        :param time_out: int - timeout
+        :param username: string - username
+        :param password: string - password
+        :return: None
+        """
+        if self.client:
+            if self.host != host or self.port != port or self.timeout != time_out:
+                if self.client.connection:
+                    self.client.close_connection()
+                self.host, self.port, self.timeout = host, port, time_out
+                self.client = Client(host=self.host, port=self.port, timeout=self.timeout)
+            self.client.connect()
+            self.client.username, self.client.password = username, password
+        else:
+            self.host, self.port, self.timeout = host, port, time_out
+            self.client = Client(host=self.host,
+                                 port=self.port,
+                                 timeout=self.timeout,
+                                 username=username,
+                                 password=password)
+            self.client.connect()
+
+    def start(self, host=None, port=None, time_out=None, username=None, password=None, game=None, num_players=None,
+              num_turns=None):
         """Logs in and starts bot.
 
         :param host: string - host
@@ -167,14 +203,14 @@ class Bot(object):
         :param password: string - password
         :param game: string - game title to connect to or create game with the title if it doesn't exist
         :param num_players: int - number of players in the game
+        :param num_turns: int - number of turns (game duration)
         :return: None
         """
         self.started = True
-        self.host, self.port, self.timeout, self.username, self.password = host, port, time_out, username, password
-        self.game, self.num_players = game, num_players
-        self.queue = Queue()
+        self.game = game
         try:
-            self.login(game=self.game, num_players=self.num_players)
+            self.connect(host=host, port=port, time_out=time_out, username=username, password=password)
+            self.login(game=self.game, num_players=num_players, num_turns=num_turns)
             if self.game:
                 while self.started and not self.game_is_run():
                     sleep(1)
